@@ -746,6 +746,8 @@ def main():
         # Select orders when the machine has been setled up
         if st.session_state['mchn_ordr'] != DEFAULT_ordrs: 
             cnt1 = cnt1.empty()
+            # A list of snapshots and plants must be selected.
+            
             uploaded_file = cnt1.file_uploader("Load Orders File", type=['csv'])
         if uploaded_file != None and 'uploaded_file' not in st.session_state:
             ordf = uploaded_file.name
