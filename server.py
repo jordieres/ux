@@ -575,6 +575,18 @@ def auctions_log(lgs,mdt):
     return(res)
 #
 #
+def lst_snapshots(platform):
+    if platform in st.session_state['mchnvec_plnt']: # Machine where the log agent is running
+        machine       = st.session_state['mchnvec_plnt'][platform]['srvn']
+        oshl =  " rsh " + str(machine) +" ls -lt /opt/dynreact/"
+        err0 = subprocess.Popen(oshl, stdout=subprocess.PIPE, stdin=None, \
+                            stderr=subprocess.PIPE, close_fds=True, shell=True)
+        comm, err_1 = err0.communicate()
+        lgf  = comm.split(' ')
+        flnm = ' '.join(lgf[8:])
+        return(flnm)
+#
+#
 def main():
     #
     # ==================================================================================================
