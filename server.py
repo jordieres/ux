@@ -648,7 +648,7 @@ def main():
     #
     # main_tabs = ['ORDERS','PLANTS','OUTCOME']
     optplnts  = ['VA08','VA09','VA10','VA11','VA12','VA13']
-    tgplnts   =[]
+    tgplnts   = []
     if 'optg' not in locals():
         optg={}
     #
@@ -669,10 +669,7 @@ def main():
     #             "nav-link-selected": {"background-color": "#ADD8E6"},
     #             }
     #             )
-    platform = selectbox_with_default(center_gnrlsect, df['apiict'], DEFAULT_pltfrm)
-    log      = 'log@' + str(platform)
-    browser  = 'browser@' + str(platform)
-    launcher = 'launcher@' + str(platform) 
+    # platform = selectbox_with_default(center_gnrlsect, df['apiict'], DEFAULT_pltfrm)
     lst_orders     = []
     lst_plnts      = []
     pressLO        = False
@@ -680,41 +677,44 @@ def main():
     ordf           = DEFAULT        # Order file picked-up
     plntsel        = DEFAULT_plnts  # plants selected
     uploaded_file  = None
-    init_vars(left_gnrlsect, center_gnrlsect,platform)
-    #
-    directory_log, df_st = setup(center_gnrlsect,platform,log_mach,log,browser,launcher,password)   
-    log_st, brw_st = check_agents(log_mach, platform, password, directory_log)
-    #
-    if platform != DEFAULT_pltfrm:
-        shutdown = right_gnrlsect.button('Shutdown')
-        st.session_state['shutdown'] = shutdown
-        request_agent_list = right_gnrlsect.button('Agent List?')
-        st.session_state['req_agnt_lst'] = request_agent_list
+    if 'platform' not in locals(): 
+        platform = DEFAULT_pltfrm
     #
     if 'request_agent_list' not in locals():
         request_agent_list = False
     if 'shutdown' not in locals():
         shutdown = False
     #
-    if log_st != 1 or brw_st != 1: # If both are 1, platform and agents are running.
-        kill_agents(log_mach,directory_log,log_st,brw_st)
-        initialize_agents(log_mach, platform, password, directory_log)
-        fd,path = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
-        st.session_state['pltvec'][platform] = {}
-        st.session_state['pltvec'][platform]['local_log'] = path
-    elif request_agent_list:
-        directory_log, df_st = setup(center_gnrlsect,platform,log_mach,log,browser,launcher,password)
+    if platform != DEFAULT_pltfrm:
+        init_vars(left_gnrlsect, center_gnrlsect,platform)
+        directory_log, df_st = setup(center_gnrlsect,platform,log_mach, \
+                                        log,browser,launcher,password)   
+        log_st, brw_st = check_agents(log_mach, platform, password, directory_log)
+        #
+        shutdown = right_gnrlsect.button('Shutdown')
+        st.session_state['shutdown'] = shutdown
+        request_agent_list = right_gnrlsect.button('Agent List?')
         st.session_state['req_agnt_lst'] = request_agent_list
-        request_agent_list = False
-        fd,path = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
-        st.session_state['pltvec'][platform] = {}
-        st.session_state['pltvec'][platform]['local_log'] = path   
-    #
-    df_cnt       = st.container()
-    df_container = df_cnt.empty()
-    if df_st.shape[0] > 0:
-        df_container.dataframe(df_st)
-        st.session_state['df_st'] = df_st
+        #
+        if log_st != 1 or brw_st != 1: # If both are 1, platform and agents are running.
+            kill_agents(log_mach,directory_log,log_st,brw_st)
+            initialize_agents(log_mach, platform, password, directory_log)
+            fd,path = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
+            st.session_state['pltvec'][platform] = {}
+            st.session_state['pltvec'][platform]['local_log'] = path
+        elif request_agent_list:
+            directory_log, df_st = setup(center_gnrlsect,platform,log_mach,log,browser,launcher,password)
+            st.session_state['req_agnt_lst'] = request_agent_list
+            request_agent_list = False
+            fd,path = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
+            st.session_state['pltvec'][platform] = {}
+            st.session_state['pltvec'][platform]['local_log'] = path   
+        #
+        df_cnt       = st.container()
+        df_container = df_cnt.empty()
+        if df_st.shape[0] > 0:
+            df_container.dataframe(df_st)
+            st.session_state['df_st'] = df_st
     st.session_state['pltfrm'] = platform
     #
     if platform != DEFAULT_pltfrm:
@@ -751,10 +751,9 @@ def main():
             sticky_mode='pinned', #jumpy or not-jumpy, but sticky or pinned
         )
         #
-        if sum(v for k,v in optg.items()) == 0:
-            for itg in range(len(optplnts)):
-                if optg[itg] == 1:
-                    tgplnts.append(optplnts[itg])
+        for itg in range(len(optplnts)):
+            if optg[itg] == 1:
+                tgplnts.append(optplnts[itg])
         lstsnapsh = list_snapshots(platform)
         #
         #get the id of the menu item clicked --> current_tab
@@ -806,10 +805,18 @@ def main():
     else:
         current_tab = ''
         if 'pltfrm' in st.session_state:
-            center_gnrlsect.write('Select the targeted plant(s)')
+            center_gnrlsect.write('**Select the targeted plant(s)**')
             if sum(v for k,v in optg.items()) == 0:
                 for itg in range(len(optplnts)):
                     optg[itg] = center_gnrlsect.checkbox(optplnts[itg])
+            #
+            center_gnrlsect.write('**Select the interesting negotiating platform**')
+            platform = selectbox_with_default(center_gnrlsect, df['apiict'], \
+                                            DEFAULT_pltfrm)
+            log      = 'log@' + str(platform)
+            browser  = 'browser@' + str(platform)
+            launcher = 'launcher@' + str(platform) 
+            #
             center_gnrlsect.write('\n')
             left_gnrlsect.header('Welcome!')
             left_gnrlsect.write('Here you will manage your Multi-agent System.')
