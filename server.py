@@ -816,6 +816,7 @@ def main():
             log      = 'log@' + str(platform)
             browser  = 'browser@' + str(platform)
             launcher = 'launcher@' + str(platform) 
+            print('PLT:' + platform)
             #
             center_gnrlsect.write('\n')
             left_gnrlsect.header('Welcome!')
