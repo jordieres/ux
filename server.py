@@ -70,7 +70,7 @@ st.markdown("""
 #
 def selectbox_with_default(obj, values, default, text = '', sidebar = False):
     func = obj.sidebar.selectbox if sidebar else obj.selectbox
-    return func(text, np.insert(np.array(values,object),0,default))
+    return func(text, np.insert(np.array(values[1:],object),0,default))
 #
 def get_directory(log_mach):
     oshl = 'rsh '+str(log_mach)+' mktemp -d -p . '
@@ -96,7 +96,7 @@ def initialize_agents(machine, platform, password, my_dict):
         launcher= 'launcher@' + str(platform)
         fd,path = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
         fp = os.fdopen(fd,'w')
-        fp.write("#! /bin/bash\n\ncd " + str(my_dict)+'\n')
+        fp.write("#! /bin/bash\n\ncd $HOME/" + str(my_dict)+'\n')
         fp.write('/usr/bin/nohup /usr/bin/python3 ./log.py ' +\
                 '-bag '+str(browser)+' -u '+str(log)+' -p '+password+' -w 900 &\n')
         fp.write('sleep 2\n')
@@ -236,15 +236,26 @@ def list_plants_active(pltf, log, browser, launcher, my_dict,password):
             n_plants  = len(lst_plnts['pltname'].unique().tolist())
     return n_plants, lst_plnts
 #
-def list_snapshots(pltf):
-    olcs = "rsh "+pltf+" ls -lt 'Snapshot\ Prodcution\ *.xlsx | head -1 "
+def list_snapshots(pltf,lstplts):
+    olcs = "rsh "+pltf+" ls -1t 'Snapshot\ Production*.xlsx'"
     out  = subprocess.Popen(olcs, stdout=subprocess.PIPE, stdin=None, \
                                 stderr=subprocess.PIPE,close_fds=True, shell=True, \
                                 universal_newlines = True)
     outlst, err = out.communicate()
-    pdb.set_trace()
-    lst_objs    = outlst.split('\n')
-    return(lst_objs)
+    lst_objs    = outlst.rstrip().split('\n')
+    #
+    if len(lst_objs) > 0:
+        fd,path = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
+        orgf = lst_objs[0].replace(' ','\ ').replace('(','\(').replace(')','\)')
+        oshl = " scp " + " @" + pltf +":$HOME/'" + orgf + "' " + path
+        err  = subprocess.Popen(oshl, stdout=subprocess.DEVNULL, stdin=None, \
+                        stderr=subprocess.DEVNULL, close_fds=True, shell=True)
+        time.sleep(3)
+        tmpdt= pd.read_excel(path)
+        tmpdt['Present Plant'] = tmpdt['Present Plant'].str.replace('VEA','VA')
+        ntpdt= tmpdt.loc[tmpdt['Present Plant'].isin(lstplts)]
+        os.remove(path)
+    return({'rfiles':lst_objs,'snap':ntpdt})
 #
 def display_table(platform, log_mach, log, browser, launcher, directory, password):
     if platform == DEFAULT_pltfrm:
@@ -372,17 +383,11 @@ def tabs(obj,default_tabs = [], default_active_tab=0):
     """,unsafe_allow_html=True)        
     return(active_tab)
 #
-def init_vars(lft,cnt,platform):
+def init_vars(platform):
     if 'directory_log' not in st.session_state:
         st.session_state['directory_log']= None
     if 'pltfrm' not in st.session_state:
         st.session_state['pltfrm']       = None
-        #if platform == DEFAULT_pltfrm:
-        #    lft.header('Welcome!')
-        #    lft.write('Here you will manage your Multi-agent System.')
-        #    lft.write('You will be able of keeping track of your agents and bids, their statuses and even uploading order forms and launching them!')
-        #    st.warning('Please, to start the session you need to pick a value')
-        #    cnt.image('logo2.png', use_column_width = True)
     if 'pltvec' not in st.session_state:
         st.session_state['pltvec']       = {}
     if 'mchn_ordr' not in st.session_state:
@@ -653,23 +658,15 @@ def main():
         optg={}
     #
     # 
-    st.empty()
-    title_container = st.container()
+    # pdb.set_trace()
+    if 'placeholder' not in st.session_state.keys():
+        placeholder    = st.empty()
+        st.session_state['placeholder'] = placeholder    
+    title_container= st.container()
     #
     left_gnrlsect, center_gnrlsect, right_gnrlsect = title_container.columns((2,4,1))
     left_gnrlsect.image('logo.png', width=128)
     #
-    # with center_gnrlsect:
-    #     platform = option_menu("Select Platform", options = platforms_parser,
-    #                             default_index = 0,
-    #                             styles={
-    #             "container": {"padding": "5!important", "background-color": "#ffffff"},
-    #             "icon": {"color": "blue", "font-size": "20px"}, 
-    #             "nav-link": {"font-size": "13px", "text-align": "left", "margin":"0px", "--hover-color": "#ADD8E6"},
-    #             "nav-link-selected": {"background-color": "#ADD8E6"},
-    #             }
-    #             )
-    # platform = selectbox_with_default(center_gnrlsect, df['apiict'], DEFAULT_pltfrm)
     lst_orders     = []
     lst_plnts      = []
     pressLO        = False
@@ -679,14 +676,57 @@ def main():
     uploaded_file  = None
     if 'platform' not in locals(): 
         platform = DEFAULT_pltfrm
-    #
     if 'request_agent_list' not in locals():
         request_agent_list = False
     if 'shutdown' not in locals():
         shutdown = False
-    #
-    if platform != DEFAULT_pltfrm:
-        init_vars(left_gnrlsect, center_gnrlsect,platform)
+    st.session_state['pltfrm'] = platform
+    #  
+    if platform == DEFAULT_pltfrm:
+        current_tab = ''
+        if 'pltfrm' in st.session_state:
+            center_gnrlsect.write('**Select the targeted plant(s)**')
+            if sum(v for k,v in optg.items()) == 0:
+                for itg in range(len(optplnts)):
+                    optg[itg] = center_gnrlsect.checkbox(optplnts[itg])
+                # optg = center_gnrlsect.multiselect('Select one or more options',optplnts)
+            #
+            center_gnrlsect.write('\n\n**Select the interesting negotiating sites**')
+            platform = selectbox_with_default(center_gnrlsect, df['apiict'], \
+                                            DEFAULT_pltfrm, "Platform:")
+            #
+            log      = 'log@' + str(platform)
+            browser  = 'browser@' + str(platform)
+            launcher = 'launcher@' + str(platform)
+            #
+            center_gnrlsect.write('\n')
+            left_gnrlsect.header('Welcome!')
+            left_gnrlsect.write('Here you will manage your Multi-agent System.')
+            left_gnrlsect.write('You will be able of keeping track of your agents and bids, their statuses and even uploading order forms and launching them!')
+            # st.warning('Please, to start the session you need to pick a the plant(s) and the platform in this order')
+            center_gnrlsect.image('logo2.png', use_column_width = True)
+            center_gnrlsect.write('\n\n\n\n')
+            original_warning =  '<p style="font-family:Courier; color:Red; font-size: 20px;">' + \
+                                '<b><it>Please, to start the session you need to pick the plant(s) ' + \
+                                'and the platform in this order</it></b>'
+            center_gnrlsect.markdown(original_warning, unsafe_allow_html=True)
+            #
+            if platform != st.session_state['pltfrm']:
+                for itg in range(len(optplnts)):
+                    if optg[itg] == 1:
+                        tgplnts.append(optplnts[itg])
+                lstsnapsh = list_snapshots(platform,tgplnts)
+                st.session_state['pltfrm'] = platform
+                #
+                st.session_state['placeholder'].empty()
+                placeholder    = st.empty()
+                title_container= st.container()
+                left_gnrlsect, center_gnrlsect, right_gnrlsect = title_container.columns((2,4,1))
+                left_gnrlsect.image('logo.png', width=128)
+                st.session_state['placeholder'] = placeholder             
+        #
+    if platform != DEFAULT_pltfrm: 
+        init_vars(platform)
         directory_log, df_st = setup(center_gnrlsect,platform,log_mach, \
                                         log,browser,launcher,password)   
         log_st, brw_st = check_agents(log_mach, platform, password, directory_log)
@@ -715,9 +755,7 @@ def main():
         if df_st.shape[0] > 0:
             df_container.dataframe(df_st)
             st.session_state['df_st'] = df_st
-    st.session_state['pltfrm'] = platform
-    #
-    if platform != DEFAULT_pltfrm:
+        #
         st.markdown("**_____________________________________________________________________**")
         # 
         # Orders panel (inside the platform)
@@ -727,18 +765,6 @@ def main():
             old_tab  = ''
         else:
             old_tab  = current_tab
-        # current_tab = tabs(st,main_tabs)
-        # current_tab = option_menu(None, options = main_tabs,
-        #                             icons = ["building", "envelope", "card-list"],
-        #                             default_index = 0,
-        #                             styles={
-        #             "container": {"padding": "5!important", "background-color": "#ffffff"},
-        #             "icon": {"color": "blue", "font-size": "20px"}, 
-        #             "nav-link": {"font-size": "13px", "text-align": "left", "margin":"0px", "--hover-color": "#ADD8E6"},
-        #             "nav-link-selected": {"background-color": "#ADD8E6"},
-        #             },
-        #                             orientation = "horizontal",
-        #             )
         #
         over_theme = {'txc_inactive': '#ffffff'}
         current_tab = hc.nav_bar(
@@ -749,12 +775,7 @@ def main():
             hide_streamlit_markers=False, #will show the st hamburger as well as the navbar now!
             sticky_nav=True, #at the top or not
             sticky_mode='pinned', #jumpy or not-jumpy, but sticky or pinned
-        )
-        #
-        for itg in range(len(optplnts)):
-            if optg[itg] == 1:
-                tgplnts.append(optplnts[itg])
-        lstsnapsh = list_snapshots(platform)
+            )
         #
         #get the id of the menu item clicked --> current_tab
         #
@@ -776,8 +797,8 @@ def main():
             #
             if 'platform' in locals() and 'machine' in locals():
                 lst_orders = setup_order(platform,machine)
-            if 'uploaded_file' in st.session_state:
-                uploaded_file = st.session_state['uploaded_file']
+            # if 'uploaded_file' in st.session_state:
+            #     uploaded_file = st.session_state['uploaded_file']
             if platform in st.session_state['mchnvec_ordr']:
                 if machine in st.session_state['mchnvec_ordr'][platform]['ords'].keys():
                     ext_ordrs  = st.session_state['mchnvec_ordr'][platform]['ords'][machine]
@@ -802,28 +823,6 @@ def main():
                 if st.session_state['PS'] is not None:
                     press_plant1 = st.session_state['PS']
                     plntsel    = st.session_state['plntsel']
-    else:
-        current_tab = ''
-        if 'pltfrm' in st.session_state:
-            center_gnrlsect.write('**Select the targeted plant(s)**')
-            if sum(v for k,v in optg.items()) == 0:
-                for itg in range(len(optplnts)):
-                    optg[itg] = center_gnrlsect.checkbox(optplnts[itg])
-            #
-            center_gnrlsect.write('**Select the interesting negotiating platform**')
-            platform = selectbox_with_default(center_gnrlsect, df['apiict'], \
-                                            DEFAULT_pltfrm)
-            log      = 'log@' + str(platform)
-            browser  = 'browser@' + str(platform)
-            launcher = 'launcher@' + str(platform) 
-            print('PLT:' + platform)
-            #
-            center_gnrlsect.write('\n')
-            left_gnrlsect.header('Welcome!')
-            left_gnrlsect.write('Here you will manage your Multi-agent System.')
-            left_gnrlsect.write('You will be able of keeping track of your agents and bids, their statuses and even uploading order forms and launching them!')
-            st.warning('Please, to start the session you need to pick a the plant(s) and the platform in this order')
-            center_gnrlsect.image('logo2.png', use_column_width = True)
     #
     if current_tab == 'Home':
         st.write(st.session_state['mchn_ordr'], 'Order')
