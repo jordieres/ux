@@ -113,10 +113,13 @@ def initialize_agents(machine, platform, password, my_dict):
         time.sleep(2)
         err1 = subprocess.Popen(oshl1, stdout=subprocess.PIPE, stdin=None, \
                             stderr=subprocess.PIPE, close_fds=True, shell=True)
+        lg1, err_1 = err1.communicate() 
         if err_0.decode() == "":
             os.remove(path)
         else:
             print('Error: ' + err_0.decode() + '->' + lg0.decode())
+        if err_1.decode() != "":
+            print('Error: ' + err_1.decode() + '->' + lg1.decode())
     return(None)
 #
 def check_agents(machine, platform, password,my_dict):
