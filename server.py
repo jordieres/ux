@@ -684,7 +684,8 @@ def main():
     if 'shutdown' not in locals():
         shutdown = False
     st.session_state['pltfrm'] = platform
-    #  
+    #
+    pdb.set_trace()
     if platform == DEFAULT_pltfrm:
         current_tab = ''
         if 'pltfrm' in st.session_state:
@@ -719,6 +720,7 @@ def main():
                     if optg[itg] == 1:
                         tgplnts.append(optplnts[itg])
                 lstsnapsh = list_snapshots(platform,tgplnts)
+                pdb.set_trace()
                 st.session_state['pltfrm'] = platform
                 #
                 st.session_state['placeholder'].empty()
@@ -734,6 +736,7 @@ def main():
                                         log,browser,launcher,password)   
         log_st, brw_st = check_agents(log_mach, platform, password, directory_log)
         #
+        # Setting interaction buttons.
         shutdown = right_gnrlsect.button('Shutdown')
         st.session_state['shutdown'] = shutdown
         request_agent_list = right_gnrlsect.button('Agent List?')
