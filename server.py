@@ -732,6 +732,9 @@ def main():
             lstsnapsh = list_snapshots(platform,tgplnts)
             st.session_state['snapshot'] = lstsnapsh
             st.session_state['pltfrm'] = platform
+            srvplnt   = st.session_state['mchnvec_plnt'][platform]]['srvn']
+            lst_plnts = setup_plant(pltform,srvplnt)
+            st.session_state['mchnvec_plnt'][platform]['plnts'][srvplnt]=tgplnts
             #
             st.session_state['placeholder'].empty()
             placeholder    = st.empty()
@@ -882,6 +885,7 @@ def main():
         rght1= right_ordr.empty()
         # pdb.set_trace()
         rght1.write(':'.join(tgplnts))
+        pdb.set_trace()
         if st.session_state['mchn_ordr'] == DEFAULT_ordrs:
             cnt11 = cnt1.write('No Service Machine Selected')
         if st.session_state['mchn_ordr'] != machine and machine != DEFAULT_ordrs: # Change of Machine
