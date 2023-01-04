@@ -190,13 +190,13 @@ class LogAgent(Agent):
                     if activep.shape[0] > 0:
                         if activep.loc[(activep['id']==idobj)&(activep['st']==idst),\
                                     :].shape[0] == 0:
-                            activep = activep.append(pd.DataFrame([{'t':\
+                            activep = pd.concat([activep],[pd.DataFrame([{'t':\
                                     datetime.datetime.now(),'id': idobj,\
-                                    'st':idst,'IP':idip}]))
+                                    'st':idst,'IP':idip}])])
                     else:
-                        activep = activep.append(pd.DataFrame([{'t':\
+                        activep = pd.concat([activep],[pd.DataFrame([{'t':\
                                     datetime.datetime.now(),'id': idobj,\
-                                    'st':idst,'IP':idip}]))
+                                    'st':idst,'IP':idip}])])
                     activep = activep.loc[activep['t'] > datetime.datetime.now() -\
                                 datetime.timedelta(seconds=600),:]
                     activep.reset_index(drop=True,inplace=True)

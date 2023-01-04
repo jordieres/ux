@@ -96,28 +96,45 @@ def initialize_agents(machine, platform, password, my_dict):
         launcher= 'launcher@' + str(platform)
         fd,path = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
         fp = os.fdopen(fd,'w')
-        fp.write("#! /bin/bash\n\ncd $HOME/" + str(my_dict)+'\n')
-        fp.write('/usr/bin/nohup /usr/bin/python3 ./log.py ' +\
-                '-bag '+str(browser)+' -u '+str(log)+' -p '+password+' -w 900 &\n')
+        # Masking with virtualenv the appropriate releases of python3
+        fp.write("#! /bin/bash\n\n")
+        fp.write("python3 --version\n\ncd $HOME/" + str(my_dict)+'\n')
+        # fp.write('/usr/bin/nohup /usr/bin/python3 ./log.py ' +\
+        fp.write('/usr/bin/nohup python3 ./log.py ' + '-bag '+str(browser) +\
+                ' -u '+str(log)+' -p '+password+' -w 900 &\n')
         fp.write('sleep 2\n')
-        fp.write('/usr/bin/nohup /usr/bin/python3 ./browser.py ' +\
-                ' -u '+str(browser)+' -p '+password+' -lag '+str(log)+ \
-                ' -lhg '+str(launcher)+' -w 900 &\n')
+        # fp.write('/usr/bin/nohup /usr/bin/python3 ./browser.py ' +\
+        fp.write('/usr/bin/nohup python3 ./browser.py ' + ' -u '+str(browser)+\
+                ' -p '+password+' -lag '+str(log)+ ' -lhg '+str(launcher)+\
+                ' -w 900 &\n')
         fp.close()
         subprocess.call(['chmod','0755',path])
         oshl = " scp -p " + path + " @" + str(machine) +":" + my_dict + "/agorden.sh"
         err0 = subprocess.Popen(oshl, stdout=subprocess.PIPE, stdin=None, \
                             stderr=subprocess.PIPE, close_fds=True, shell=True)
-        lg0, err_0 = err0.communicate() 
-        oshl1= 'rsh '+str(machine)+ ' "sh ' + str(my_dict) + '/agorden.sh"'
+        lg0, err_0 = err0.communicate()
+        fd2,path2 = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
+        fp = os.fdopen(fd2,'w')
+        fp.write('#! /bin/bash\n')
+        fp.write('source $HOME/dynreact/bin/activate; exec $HOME/' + str(my_dict) + '/agorden.sh\n')
+        fp.close()
+        subprocess.call(['chmod','0755',path2])
+        cpmd = " scp -p " + path2 + " @" + str(machine) +":" + my_dict + "/lanza.sh"
+        errc = subprocess.Popen(cpmd, stdout=subprocess.PIPE, stdin=None, \
+                            stderr=subprocess.PIPE, close_fds=True, shell=True)
+        lgc, err_c = errc.communicate()
+        cmd1 = ' "/usr/bin/nohup $HOME/' + str(my_dict) + '/lanza.sh 1> /dev/null 2> /dev/null &"'
+        oshl1= 'rsh '+str(machine)+ cmd1 
         time.sleep(2)
         err1 = subprocess.Popen(oshl1, stdout=subprocess.PIPE, stdin=None, \
                             stderr=subprocess.PIPE, close_fds=True, shell=True)
-        lg1, err_1 = err1.communicate() 
+        lg1, err_1 = err1.communicate()
         if err_0.decode() == "":
             os.remove(path)
         else:
             print('Error: ' + err_0.decode() + '->' + lg0.decode())
+        if err_c.decode() != "":
+            print('Error: ' + err_c.decode() + '->' + lgc.decode())
         if err_1.decode() != "":
             print('Error: ' + err_1.decode() + '->' + lg1.decode())
     return(None)
@@ -307,7 +324,8 @@ def launch_orders(detorder, machine, my_dict, platform, password):
     lst_pss = ','.join(detorder['cdf'].loc[:,'PltSource'].tolist())
     lst_lgth= ','.join([str(int(k)) for k in detorder['cdf'].loc[:,'CoilLength'].tolist()])
     fd,path = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
-    fp = os.fdopen(fd,'w')   
+    fp = os.fdopen(fd,'w')
+    fp.write("#! /bin/bash\n\n. $HOME/dynreact/bin/activate\n\n")
     fp.write("/usr/bin/nohup /usr/bin/python3 " + str(my_dict)+ "/launcher.py ")
     fp.write("-oc '"+str(detorder['oname'])+"' -sg '"+str(detorder['mat']))
     fp.write("' -at "+str(detorder['thick'])+ " -wi "+str(int(detorder['width'])))
@@ -337,7 +355,8 @@ def launch_plant(plant, machine, my_dict, platform, log, browser, password):
             #
             fd,path = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
             fp = os.fdopen(fd,'w')
-            fp.write("#!/bin/bash\n\ncd " + str(my_dict)+ "\n")
+            fp.write("#! /bin/bash\n\n. $HOME/dynreact/bin/activate\n\n")            
+            fp.write("\ncd " + str(my_dict)+ "\n")
             fp.write("/usr/bin/nohup /usr/bin/python3 $HOME/"+ str(my_dict)+"/va.py ")
             fp.write("-an '"+str(int(plant[-2:]))+"' -sd '"+str(0.25))
             fp.write("' -bag " + str(browser) + " -lag " + str(log) + " -u ")
@@ -403,7 +422,6 @@ def init_vars(platform):
         st.session_state['mchnvec_plnt'] = {}
     if 'areaordrs' not in st.session_state:
         st.session_state['areaordrs']    = None
-    #
     return(None)
 #
 def setup(center_gnrlsect,platform,log_mach,log, browser, launcher,password):
@@ -600,18 +618,6 @@ def auctions_log(lgs,mdt):
         res.index = sbs.index
     return(res)
 #
-def lst_snapshots(platform):
-    if platform in st.session_state['mchnvec_plnt']: # Machine where the log agent is running
-        machine       = st.session_state['mchnvec_plnt'][platform]['srvn']
-        oshl =  " rsh " + str(machine) +" ls -lt /opt/dynreact/"
-        err0 = subprocess.Popen(oshl, stdout=subprocess.PIPE, stdin=None, \
-                            stderr=subprocess.PIPE, close_fds=True, shell=True)
-        comm, err_1 = err0.communicate()
-        lgf  = comm.split(' ')
-        flnm = ' '.join(lgf[8:])
-        return(flnm)
-#
-#
 #
 #
 def main():
@@ -677,60 +683,67 @@ def main():
     ordf           = DEFAULT        # Order file picked-up
     plntsel        = DEFAULT_plnts  # plants selected
     uploaded_file  = None
-    if 'platform' not in locals(): 
-        platform = DEFAULT_pltfrm
+    #
+    try:
+        platform = st.session_state['pltfrm']
+    except:
+        if 'platform' not in locals(): 
+            platform = DEFAULT_pltfrm
+            st.session_state['pltfrm'] = platform
+        else:
+            st.session_state['pltfrm'] = platform
     if 'request_agent_list' not in locals():
         request_agent_list = False
     if 'shutdown' not in locals():
         shutdown = False
-    st.session_state['pltfrm'] = platform
     #
-    pdb.set_trace()
     if platform == DEFAULT_pltfrm:
         current_tab = ''
-        if 'pltfrm' in st.session_state:
-            center_gnrlsect.write('**Select the targeted plant(s)**')
-            if sum(v for k,v in optg.items()) == 0:
-                for itg in range(len(optplnts)):
-                    optg[itg] = center_gnrlsect.checkbox(optplnts[itg])
-                # optg = center_gnrlsect.multiselect('Select one or more options',optplnts)
-            #
-            center_gnrlsect.write('\n\n**Select the interesting negotiating sites**')
-            platform = selectbox_with_default(center_gnrlsect, df['apiict'], \
-                                            DEFAULT_pltfrm, "Platform:")
-            #
-            log      = 'log@' + str(platform)
-            browser  = 'browser@' + str(platform)
-            launcher = 'launcher@' + str(platform)
-            #
-            center_gnrlsect.write('\n')
-            left_gnrlsect.header('Welcome!')
-            left_gnrlsect.write('Here you will manage your Multi-agent System.')
-            left_gnrlsect.write('You will be able of keeping track of your agents and bids, their statuses and even uploading order forms and launching them!')
-            # st.warning('Please, to start the session you need to pick a the plant(s) and the platform in this order')
-            center_gnrlsect.image('logo2.png', use_column_width = True)
-            center_gnrlsect.write('\n\n\n\n')
-            original_warning =  '<p style="font-family:Courier; color:Red; font-size: 20px;">' + \
-                                '<b><it>Please, to start the session you need to pick the plant(s) ' + \
-                                'and the platform in this order</it></b>'
-            center_gnrlsect.markdown(original_warning, unsafe_allow_html=True)
-            #
-            if platform != st.session_state['pltfrm']:
-                for itg in range(len(optplnts)):
-                    if optg[itg] == 1:
-                        tgplnts.append(optplnts[itg])
-                lstsnapsh = list_snapshots(platform,tgplnts)
-                pdb.set_trace()
-                st.session_state['pltfrm'] = platform
-                #
-                st.session_state['placeholder'].empty()
-                placeholder    = st.empty()
-                title_container= st.container()
-                left_gnrlsect, center_gnrlsect, right_gnrlsect = title_container.columns((2,4,1))
-                left_gnrlsect.image('logo.png', width=128)
-                st.session_state['placeholder'] = placeholder             
+        center_gnrlsect.write('**Select the targeted plant(s)**')
+        if sum(v for k,v in optg.items()) == 0:
+            for itg in range(len(optplnts)):
+                optg[itg] = center_gnrlsect.checkbox(optplnts[itg])
+            # optg = center_gnrlsect.multiselect('Select one or more options',optplnts)
         #
-    if platform != DEFAULT_pltfrm: 
+        center_gnrlsect.write('\n\n**Select the interesting negotiating sites**')
+        platform = selectbox_with_default(center_gnrlsect, df['apiict'], \
+                                        DEFAULT_pltfrm, "Platform:")
+        #
+        log      = 'log@' + str(platform)
+        browser  = 'browser@' + str(platform)
+        launcher = 'launcher@' + str(platform)
+        #
+        center_gnrlsect.write('\n')
+        left_gnrlsect.header('Welcome!')
+        left_gnrlsect.write('Here you will manage your Multi-agent System.')
+        left_gnrlsect.write('You will be able of keeping track of your agents and bids, their statuses and even uploading order forms and launching them!')
+        # st.warning('Please, to start the session you need to pick a the plant(s) and the platform in this order')
+        center_gnrlsect.image('logo2.png', use_column_width = True)
+        center_gnrlsect.write('\n\n\n\n')
+        original_warning =  '<p style="font-family:Courier; color:Red; font-size: 20px;">' + \
+                            '<b><it>Please, to start the session you need to pick the plant(s) ' + \
+                            'and the platform in this order</it></b>'
+        center_gnrlsect.markdown(original_warning, unsafe_allow_html=True)
+        #
+        if platform != st.session_state['pltfrm']:
+            for itg in range(len(optplnts)):
+                if optg[itg] == 1:
+                    tgplnts.append(optplnts[itg])
+            lstsnapsh = list_snapshots(platform,tgplnts)
+            st.session_state['snapshot'] = lstsnapsh
+            st.session_state['pltfrm'] = platform
+            #
+            st.session_state['placeholder'].empty()
+            placeholder    = st.empty()
+            title_container= st.container()
+            left_gnrlsect, center_gnrlsect, right_gnrlsect = title_container.columns((2,4,1))
+            left_gnrlsect.image('logo.png', width=128)
+            st.session_state['placeholder'] = placeholder             
+        #
+    if platform != DEFAULT_pltfrm:
+        log      = 'log@' + str(platform)
+        browser  = 'browser@' + str(platform)
+        launcher = 'launcher@' + str(platform)         
         init_vars(platform)
         directory_log, df_st = setup(center_gnrlsect,platform,log_mach, \
                                         log,browser,launcher,password)   
@@ -745,6 +758,7 @@ def main():
         if log_st != 1 or brw_st != 1: # If both are 1, platform and agents are running.
             kill_agents(log_mach,directory_log,log_st,brw_st)
             initialize_agents(log_mach, platform, password, directory_log)
+            log_st, brw_st = check_agents(log_mach, platform, password, directory_log)
             fd,path = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
             st.session_state['pltvec'][platform] = {}
             st.session_state['pltvec'][platform]['local_log'] = path
@@ -756,15 +770,12 @@ def main():
             st.session_state['pltvec'][platform] = {}
             st.session_state['pltvec'][platform]['local_log'] = path   
         #
-        df_cnt       = st.container()
-        df_container = df_cnt.empty()
         if df_st.shape[0] > 0:
-            df_container.dataframe(df_st)
+            #
             st.session_state['df_st'] = df_st
+            st.markdown("**_____________________________________________________________________**")            
         #
-        st.markdown("**_____________________________________________________________________**")
-        # 
-        # Orders panel (inside the platform)
+        #
         #
         vplntsel = False
         if 'current_tab' not in locals():
@@ -831,8 +842,16 @@ def main():
                     plntsel    = st.session_state['plntsel']
     #
     if current_tab == 'Home':
-        st.write(st.session_state['mchn_ordr'], 'Order')
-        st.write(st.session_state['mchn_plnt'], 'Plant')
+        # st.write(st.session_state['mchn_ordr'], 'Order')
+        # st.write(st.session_state['mchn_plnt'], 'Plant')
+        df_cnt       = st.container()
+        df_container = df_cnt.empty()
+        try:
+            df_st = st.session_state['df_st']
+        except:
+            df_st = pd.DataFrame()
+        if df_st.shape[0] > 0:
+            df_container.dataframe(df_st)
     #
     if current_tab == 'ORDERS':
         #
@@ -840,31 +859,38 @@ def main():
         # usar las variables globales para mantener la lógica y el control ...
         st.empty()
         left_ordr, center_ordr, right_ordr = st.columns((1,2,1))
+        df_cnt       = center_ordr.container()
+        df_container = df_cnt.empty()
+        st.markdown("**_____________________________________________________________________**")
+        try:
+            df_st = st.session_state['df_st']
+        except:
+            st.warning("Error: DF_ST not defined")
+        #
         with left_ordr:
-            machine = option_menu("Machine Selection", options = machines_parser,
+            machine = option_menu("Machines:", options = machines_parser,
                                     default_index = 0,
                                     menu_icon="cast",
                                     styles={
                     "container": {"padding": "5!important", "background-color": "#ffffff"},
-                    "icon": {"color": "blue", "font-size": "20px"}, 
-                    "nav-link": {"font-size": "13px", "text-align": "left", "margin":"0px", "--hover-color": "#ADD8E6"},
+                    "icon": {"color": "blue", "font-size": "18px"}, 
+                    "nav-link": {"font-size": "14px", "text-align": "left", "margin":"0px", "--hover-color": "#ADD8E6"},
                     "nav-link-selected": {"background-color": "#ADD8E6"},
-                    }
-                    )
+                    })
         #machine  = selectbox_with_default(left_ordr,df2['machines'], machine)
         cnt1 = center_ordr.empty()
         rght1= right_ordr.empty()
-        pdb.set_trace()
+        # pdb.set_trace()
         rght1.write(':'.join(tgplnts))
         if st.session_state['mchn_ordr'] == DEFAULT_ordrs:
             cnt11 = cnt1.write('No Service Machine Selected')
-        #
         if st.session_state['mchn_ordr'] != machine and machine != DEFAULT_ordrs: # Change of Machine
             lst_orders = setup_order(platform,machine)
-        # Select orders when the machine has been setled up
         if st.session_state['mchn_ordr'] != DEFAULT_ordrs: 
             cnt1 = cnt1.empty()
+        
             uploaded_file = cnt1.file_uploader("Load Orders File", type=['csv'])
+        
         if uploaded_file != None:
             if 'uploaded_file' not in st.session_state:
                 ordf = uploaded_file.name
