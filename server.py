@@ -277,6 +277,14 @@ def list_snapshots(pltf,lstplts):
         os.remove(path)
     return({'rfiles':lst_objs,'snap':ntpdt})
 #
+def list_lots(snap,tgplnts):
+    res  = {}
+    lidx =[item for item in snap['Lot ID'].unique().tolist() if str(item) != 'nan' ]
+    for i in lidx:
+        tmp = snap.loc[snap['Lot ID']==i,'Production Order NR'].unique().tolist()
+        res[i] = tmp
+    return(res)
+#
 def display_table(platform, log_mach, log, browser, launcher, directory, password):
     if platform == DEFAULT_pltfrm:
         dataframe = pd.DataFrame()
@@ -730,10 +738,22 @@ def main():
                 if optg[itg] == 1:
                     tgplnts.append(optplnts[itg])
             lstsnapsh = list_snapshots(platform,tgplnts)
-            st.session_state['snapshot'] = lstsnapsh
+            st.session_state['snapshot'] = lstsnapsh          
+            lstlots   = list_lots(lstsnapsh['snap'],tgplnts)
+            st.session_state['lots'] = lstlots
             st.session_state['pltfrm'] = platform
-            srvplnt   = st.session_state['mchnvec_plnt'][platform]]['srvn']
-            lst_plnts = setup_plant(pltform,srvplnt)
+            # 
+            # Setup of contexts ... gathered from 766 lines
+            log      = 'log@' + str(platform)
+            browser  = 'browser@' + str(platform)
+            launcher = 'launcher@' + str(platform)
+            init_vars(platform)
+            directory_log, df_st = setup(center_gnrlsect,platform,log_mach, \
+                                        log,browser,launcher,password)
+            st.session_state['directory_log'] = directory_log
+            st.session_state['df_st'] = df_st
+            srvplnt   = st.session_state['mchnvec_plnt'][platform]['srvn']
+            lst_plnts = setup_plant(platform,srvplnt)
             st.session_state['mchnvec_plnt'][platform]['plnts'][srvplnt]=tgplnts
             #
             st.session_state['placeholder'].empty()
@@ -741,16 +761,17 @@ def main():
             title_container= st.container()
             left_gnrlsect, center_gnrlsect, right_gnrlsect = title_container.columns((2,4,1))
             left_gnrlsect.image('logo.png', width=128)
-            st.session_state['placeholder'] = placeholder             
+            st.session_state['placeholder'] = placeholder
         #
     if platform != DEFAULT_pltfrm:
         log      = 'log@' + str(platform)
         browser  = 'browser@' + str(platform)
         launcher = 'launcher@' + str(platform)         
-        init_vars(platform)
-        directory_log, df_st = setup(center_gnrlsect,platform,log_mach, \
-                                        log,browser,launcher,password)   
-        log_st, brw_st = check_agents(log_mach, platform, password, directory_log)
+        # init_vars(platform)
+        if 'directory_log' in st.session_state:
+            directory_log = st.session_state['directory_log']
+            df_st         = st.session_state['df_st']
+            log_st, brw_st= check_agents(log_mach, platform, password, directory_log)
         #
         # Setting interaction buttons.
         shutdown = right_gnrlsect.button('Shutdown')
@@ -774,7 +795,6 @@ def main():
             st.session_state['pltvec'][platform]['local_log'] = path   
         #
         if df_st.shape[0] > 0:
-            #
             st.session_state['df_st'] = df_st
             st.markdown("**_____________________________________________________________________**")            
         #
@@ -888,24 +908,27 @@ def main():
         pdb.set_trace()
         if st.session_state['mchn_ordr'] == DEFAULT_ordrs:
             cnt11 = cnt1.write('No Service Machine Selected')
-        if st.session_state['mchn_ordr'] != machine and machine != DEFAULT_ordrs: # Change of Machine
+        if st.session_state['mchn_ordr'] != machine and machine != DEFAULT_ordrs and \
+                             st.session_state['mchn_ordr'] != DEFAULT_ordrs: # Change of Machine
             lst_orders = setup_order(platform,machine)
-        if st.session_state['mchn_ordr'] != DEFAULT_ordrs: 
+        if st.session_state['mchn_ordr'] != DEFAULT_ordrs: # Machine for orders selected 
             cnt1 = cnt1.empty()
-        
-            uploaded_file = cnt1.file_uploader("Load Orders File", type=['csv'])
-        
-        if uploaded_file != None:
-            if 'uploaded_file' not in st.session_state:
-                ordf = uploaded_file.name
-                st.session_state['uploaded_file'] = uploaded_file
-                if 'detord' in st.session_state:
-                    st.session_state.pop('detord')
-            else:
-                ordf = uploaded_file.name
-                st.session_state['uploaded_file'] = uploaded_file
-                if 'detord' in st.session_state:
-                    st.session_state.pop('detord')
+            lstlots = st.session_state['lots'].keys().tolist()
+            cnt1.write('* Select the relevant Lots to be scheduled *')
+            lotsdef = cnt1.checkbox(lstlots)  # lots to be used  ...
+
+        pdb.set_trace()
+        # if uploaded_file != None:
+        #     if 'uploaded_file' not in st.session_state:
+        #         ordf = uploaded_file.name
+        #         st.session_state['uploaded_file'] = uploaded_file
+        #         if 'detord' in st.session_state:
+        #             st.session_state.pop('detord')
+        #     else:
+        #         ordf = uploaded_file.name
+        #         st.session_state['uploaded_file'] = uploaded_file
+        #         if 'detord' in st.session_state:
+        #             st.session_state.pop('detord')
         ext_ordrs= []
         if platform in st.session_state['mchnvec_ordr'].keys():
             if machine in st.session_state['mchnvec_ordr'][platform]['ords'].keys():
