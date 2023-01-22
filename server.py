@@ -13,16 +13,17 @@ from urllib.error import URLError
 from argparse import ArgumentParser
 from ast import literal_eval
 #
+from streamlit_option_menu import option_menu
+import streamlit.components.v1 as html
+from  PIL import Image
+# import cv2
+# from st_aggrid import AgGrid
+# import plotly.express as px
+import io 
 #
-# En este script en vez de tener la posibilidad de elegir cualquier máquina para ejecutar el log y
-# el browser, en esta primera sección del General Status
-# Se establece una única máquina, para poder simplificar el proceso y mejorar la experiencia del usuario,
-# ya que el usuario se preocupa únicamente desde dónde.
-# Se ha lanzado las órdenes, los agentes bobina y los agentes planta.
-# En un principio se ha elegido pasar el argumento por pantalla con la ayuda de la función argparse.
-# Pero no se descarta la opción de que el usuario también pueda elegir la máuina para ejecutar el log
-# también al comienzo, cuando elige la plataforma donde se va a desarrollar todo el programa.
-#  Aunque se considera que esta forma no queda igual de bien visualmente para la experiencia del usuario.
+import hydralit as hy
+from hydralit.hydra_app import HydraApp
+import hydralit_components as hc
 #
 st.set_page_config(
     page_title='UX Industry Process Optimizer',
@@ -69,7 +70,7 @@ st.markdown("""
 #
 def selectbox_with_default(obj, values, default, text = '', sidebar = False):
     func = obj.sidebar.selectbox if sidebar else obj.selectbox
-    return func(text, np.insert(np.array(values,object),0,default))
+    return func(text, np.insert(np.array(values[1:],object),0,default))
 #
 def get_directory(log_mach):
     oshl = 'rsh '+str(log_mach)+' mktemp -d -p . '
@@ -95,23 +96,47 @@ def initialize_agents(machine, platform, password, my_dict):
         launcher= 'launcher@' + str(platform)
         fd,path = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
         fp = os.fdopen(fd,'w')
-        fp.write("#! /bin/bash\n\ncd " + str(my_dict)+'\n')
-        fp.write('/usr/bin/nohup /usr/bin/python3 ./log.py ' +\
-                '-bag '+str(browser)+' -u '+str(log)+' -p '+password+' -w 900 &\n')
+        # Masking with virtualenv the appropriate releases of python3
+        fp.write("#! /bin/bash\n\n")
+        fp.write("python3 --version\n\ncd $HOME/" + str(my_dict)+'\n')
+        # fp.write('/usr/bin/nohup /usr/bin/python3 ./log.py ' +\
+        fp.write('/usr/bin/nohup python3 ./log.py ' + '-bag '+str(browser) +\
+                ' -u '+str(log)+' -p '+password+' -w 900 &\n')
         fp.write('sleep 2\n')
-        fp.write('/usr/bin/nohup /usr/bin/python3 ./browser.py ' +\
-                ' -u '+str(browser)+' -p '+password+' -lag '+str(log)+ \
-                ' -lhg '+str(launcher)+' -w 900 &\n')
+        # fp.write('/usr/bin/nohup /usr/bin/python3 ./browser.py ' +\
+        fp.write('/usr/bin/nohup python3 ./browser.py ' + ' -u '+str(browser)+\
+                ' -p '+password+' -lag '+str(log)+ ' -lhg '+str(launcher)+\
+                ' -w 900 &\n')
         fp.close()
         subprocess.call(['chmod','0755',path])
         oshl = " scp -p " + path + " @" + str(machine) +":" + my_dict + "/agorden.sh"
         err0 = subprocess.Popen(oshl, stdout=subprocess.PIPE, stdin=None, \
                             stderr=subprocess.PIPE, close_fds=True, shell=True)
-        oshl1= 'rsh '+str(machine)+ ' "sh ' + str(my_dict) + '/agorden.sh"'
+        lg0, err_0 = err0.communicate()
+        fd2,path2 = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
+        fp = os.fdopen(fd2,'w')
+        fp.write('#! /bin/bash\n')
+        fp.write('source $HOME/dynreact/bin/activate; exec $HOME/' + str(my_dict) + '/agorden.sh\n')
+        fp.close()
+        subprocess.call(['chmod','0755',path2])
+        cpmd = " scp -p " + path2 + " @" + str(machine) +":" + my_dict + "/lanza.sh"
+        errc = subprocess.Popen(cpmd, stdout=subprocess.PIPE, stdin=None, \
+                            stderr=subprocess.PIPE, close_fds=True, shell=True)
+        lgc, err_c = errc.communicate()
+        cmd1 = ' "/usr/bin/nohup $HOME/' + str(my_dict) + '/lanza.sh 1> /dev/null 2> /dev/null &"'
+        oshl1= 'rsh '+str(machine)+ cmd1 
         time.sleep(2)
         err1 = subprocess.Popen(oshl1, stdout=subprocess.PIPE, stdin=None, \
                             stderr=subprocess.PIPE, close_fds=True, shell=True)
-        os.remove(path)
+        lg1, err_1 = err1.communicate()
+        if err_0.decode() == "":
+            os.remove(path)
+        else:
+            print('Error: ' + err_0.decode() + '->' + lg0.decode())
+        if err_c.decode() != "":
+            print('Error: ' + err_c.decode() + '->' + lgc.decode())
+        if err_1.decode() != "":
+            print('Error: ' + err_1.decode() + '->' + lg1.decode())
     return(None)
 #
 def check_agents(machine, platform, password,my_dict):
@@ -231,6 +256,35 @@ def list_plants_active(pltf, log, browser, launcher, my_dict,password):
             n_plants  = len(lst_plnts['pltname'].unique().tolist())
     return n_plants, lst_plnts
 #
+def list_snapshots(pltf,lstplts):
+    olcs = "rsh "+pltf+" ls -1t 'Snapshot\ Production*.xlsx'"
+    out  = subprocess.Popen(olcs, stdout=subprocess.PIPE, stdin=None, \
+                                stderr=subprocess.PIPE,close_fds=True, shell=True, \
+                                universal_newlines = True)
+    outlst, err = out.communicate()
+    lst_objs    = outlst.rstrip().split('\n')
+    #
+    if len(lst_objs) > 0:
+        fd,path = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
+        orgf = lst_objs[0].replace(' ','\ ').replace('(','\(').replace(')','\)')
+        oshl = " scp " + " @" + pltf +":$HOME/'" + orgf + "' " + path
+        err  = subprocess.Popen(oshl, stdout=subprocess.DEVNULL, stdin=None, \
+                        stderr=subprocess.DEVNULL, close_fds=True, shell=True)
+        time.sleep(3)
+        tmpdt= pd.read_excel(path)
+        tmpdt['Present Plant'] = tmpdt['Present Plant'].str.replace('VEA','VA')
+        ntpdt= tmpdt.loc[tmpdt['Present Plant'].isin(lstplts)]
+        os.remove(path)
+    return({'rfiles':lst_objs,'snap':ntpdt})
+#
+def list_lots(snap,tgplnts):
+    res  = {}
+    lidx =[item for item in snap['Lot ID'].unique().tolist() if str(item) != 'nan' ]
+    for i in lidx:
+        tmp = snap.loc[snap['Lot ID']==i,'Production Order NR'].unique().tolist()
+        res[i] = tmp
+    return(res)
+#
 def display_table(platform, log_mach, log, browser, launcher, directory, password):
     if platform == DEFAULT_pltfrm:
         dataframe = pd.DataFrame()
@@ -272,11 +326,14 @@ def launch_orders(detorder, machine, my_dict, platform, password):
     #nohup /usr/bin/python3 /home/jb/agents_jb03/launcher.py -oc "O202109-01" -sg "X400" -at 0.3 -wi 985 -nc 4 -lc "cO202109101, cO202109102, cO202109103,cO202109104" -po 2000 -lp "NWW1,NWW1,NWW1,NWW1" -ll "20000,21000,19500,21500" -sd "2021-11-10" -so "VA0[8-9]" -w 40 
     #-bag browser@apiict00.etsii.upm.es -lag log@apiict00.etsii.upm.es -u launcher@apiict00.etsii.upm.es -p DynReact &
     #
+    for i in detorder['cdf'].loc[:,'CoilName'].tolist(): st.session_state['mchnvec_ordr'][platform]['clts'].append(i)
+    #
     lst_cns = ','.join(detorder['cdf'].loc[:,'CoilName'].tolist())
     lst_pss = ','.join(detorder['cdf'].loc[:,'PltSource'].tolist())
     lst_lgth= ','.join([str(int(k)) for k in detorder['cdf'].loc[:,'CoilLength'].tolist()])
     fd,path = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
-    fp = os.fdopen(fd,'w')   
+    fp = os.fdopen(fd,'w')
+    fp.write("#! /bin/bash\n\n. $HOME/dynreact/bin/activate\n\n")
     fp.write("/usr/bin/nohup /usr/bin/python3 " + str(my_dict)+ "/launcher.py ")
     fp.write("-oc '"+str(detorder['oname'])+"' -sg '"+str(detorder['mat']))
     fp.write("' -at "+str(detorder['thick'])+ " -wi "+str(int(detorder['width'])))
@@ -306,7 +363,8 @@ def launch_plant(plant, machine, my_dict, platform, log, browser, password):
             #
             fd,path = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
             fp = os.fdopen(fd,'w')
-            fp.write("#!/bin/bash\n\ncd " + str(my_dict)+ "\n")
+            fp.write("#! /bin/bash\n\n. $HOME/dynreact/bin/activate\n\n")            
+            fp.write("\ncd " + str(my_dict)+ "\n")
             fp.write("/usr/bin/nohup /usr/bin/python3 $HOME/"+ str(my_dict)+"/va.py ")
             fp.write("-an '"+str(int(plant[-2:]))+"' -sd '"+str(0.25))
             fp.write("' -bag " + str(browser) + " -lag " + str(log) + " -u ")
@@ -355,17 +413,11 @@ def tabs(obj,default_tabs = [], default_active_tab=0):
     """,unsafe_allow_html=True)        
     return(active_tab)
 #
-def init_vars(lft,cnt,platform):
+def init_vars(platform):
     if 'directory_log' not in st.session_state:
         st.session_state['directory_log']= None
     if 'pltfrm' not in st.session_state:
         st.session_state['pltfrm']       = None
-        #if platform == DEFAULT_pltfrm:
-        #    lft.header('Welcome!')
-        #    lft.write('Here you will manage your Multi-agent System.')
-        #    lft.write('You will be able of keeping track of your agents and bids, their statuses and even uploading order forms and launching them!')
-        #    st.warning('Please, to start the session you need to pick a value')
-        #    cnt.image('logo2.png', use_column_width = True)
     if 'pltvec' not in st.session_state:
         st.session_state['pltvec']       = {}
     if 'mchn_ordr' not in st.session_state:
@@ -378,18 +430,15 @@ def init_vars(lft,cnt,platform):
         st.session_state['mchnvec_plnt'] = {}
     if 'areaordrs' not in st.session_state:
         st.session_state['areaordrs']    = None
-    #
     return(None)
 #
-def setup(platform,log_mach,log, browser, launcher,password):
+def setup(center_gnrlsect,platform,log_mach,log, browser, launcher,password):
     df_st = pd.DataFrame()
     directory_log = ''
     if platform in st.session_state['mchnvec_ordr'].keys() :
         directory_log = st.session_state['mchnvec_ordr'][platform]['pltd']
     elif platform != DEFAULT_pltfrm:
         directory_log = turn_on_systm(log_mach)
-        # print(directory_log, 'directory del log')
-        
         #  Machine on the Order section
         st.session_state['mchnvec_ordr'][platform] = {}
         st.session_state['mchnvec_ordr'][platform]['srvn'] = log_mach # machine for log/browser
@@ -409,16 +458,17 @@ def setup(platform,log_mach,log, browser, launcher,password):
         st.session_state['directory_log'] = directory_log
     if platform != DEFAULT_pltfrm:
         st.session_state['pltfrm'] = platform
-        res   = display_table(platform, log_mach, log, browser, launcher, \
-                            directory_log, password)
-        df_list_plnts = res['lpts']
-        df_list_coils = res['lcls']
-        df_st = res['df']
-        if df_st.shape[0] > 0:
-            df_st.set_index('Selected platform',inplace=True) 
+        with center_gnrlsect:
+            res   = display_table(platform, log_mach, log, browser, launcher, \
+                                directory_log, password)
+            df_list_plnts = res['lpts']
+            df_list_coils = res['lcls']
+            df_st = res['df']
+            if df_st.shape[0] > 0:
+                df_st.set_index('Selected platform',inplace=True) 
     return(directory_log, df_st)
 #
-def restart_vars(platform,log_mach,log, browser, launcher,password):
+def restart_vars(centr,platform,log_mach,log, browser, launcher,password):
     st.session_state['directory_log']= None
     st.session_state['pltfrm']       = None
     st.session_state['pltvec']       = {}
@@ -428,7 +478,7 @@ def restart_vars(platform,log_mach,log, browser, launcher,password):
     st.session_state['mchnvec_plnt'] = {}
     st.session_state['areaordrs']    = None
     #
-    x,y = setup(platform,log_mach,log, browser, launcher,password)
+    x,y = setup(centr,platform,log_mach,log, browser, launcher,password)
     return(None)
 #
 def setup_order(platform,machine):
@@ -439,7 +489,7 @@ def setup_order(platform,machine):
         st.session_state['mchnvec_ordr'][platform]['ords'][machine] = lst_orders
         st.session_state['mchnvec_ordr'][platform]['lnos'][machine] = []                
         st.session_state['mchnvec_ordr'][platform]['dirs'][machine] = ''
-        st.session_state['mchnvec_ordr'][platform]['clts'].append(machine)
+        # st.session_state['mchnvec_ordr'][platform]['clts'].append(machine)
     st.session_state['mchn_ordr'] = machine
     return(lst_orders)
 #
@@ -504,6 +554,8 @@ def order_process(platform,machine,detord,ordf,password):
     st.session_state['mchnvec_ordr'][platform]['lnos'][machine].append(detord)
     return(None)
 #
+# JOM removed: read_log_for_coil & read_log_for_plant
+# JOM replacement: 
 def recovery_log(platform):
     if platform in st.session_state['mchnvec_plnt']:
         directory_log = st.session_state['mchnvec_plnt'][platform]['pltd']
@@ -575,6 +627,7 @@ def auctions_log(lgs,mdt):
     return(res)
 #
 #
+#
 def main():
     #
     # ==================================================================================================
@@ -598,6 +651,8 @@ def main():
     log_mach        = args.log_mach
     password        = 'DynReact'
     lastlog_date    = None     # Holding the date of the last log.log recovery process
+    platforms_parser.append(DEFAULT_pltfrm)
+    platforms_parser.sort()
     df        = pd.DataFrame({
         'apiict': platforms_parser})
     df2       = pd.DataFrame({
@@ -605,19 +660,30 @@ def main():
     yes_no    = pd.DataFrame({
         'check': ['Yes', 'No']})
     df3       = df2
-    main_tabs = ['ORDERS','PLANTS','OUTCOME']
-    optplnts  = (DEFAULT_plnts,'VA08','VA09','VA10','VA11','VA12','VA13')
     #
-    st.empty()
-    title_container = st.container()
+    # specify the primary menu definition
+    menu_data = [
+        {'id':'ORDERS','icon': "envelope", 'label':"ORDERS"},
+        {'id':'PLANTS','icon':"building",'label':"PLANTS"},
+        {'id':'OUTCOME','icon': "far fa-chart-bar", 'label':"OUTCOME"},
+    ]
+    #
+    # main_tabs = ['ORDERS','PLANTS','OUTCOME']
+    optplnts  = ['VA08','VA09','VA10','VA11','VA12','VA13']
+    tgplnts   = []
+    if 'optg' not in locals():
+        optg={}
+    #
+    # 
+    # pdb.set_trace()
+    if 'placeholder' not in st.session_state.keys():
+        placeholder    = st.empty()
+        st.session_state['placeholder'] = placeholder    
+    title_container= st.container()
     #
     left_gnrlsect, center_gnrlsect, right_gnrlsect = title_container.columns((2,4,1))
     left_gnrlsect.image('logo.png', width=128)
     #
-    platform = selectbox_with_default(center_gnrlsect, df['apiict'], DEFAULT_pltfrm)
-    log      = 'log@' + str(platform)
-    browser  = 'browser@' + str(platform)
-    launcher = 'launcher@' + str(platform) 
     lst_orders     = []
     lst_plnts      = []
     pressLO        = False
@@ -625,47 +691,134 @@ def main():
     ordf           = DEFAULT        # Order file picked-up
     plntsel        = DEFAULT_plnts  # plants selected
     uploaded_file  = None
-    init_vars(left_gnrlsect, center_gnrlsect,platform)
     #
-    directory_log, df_st = setup(platform,log_mach,log,browser,launcher,password)   
-    log_st, brw_st = check_agents(log_mach, platform, password, directory_log)
-    #
-    if platform != DEFAULT_pltfrm:
-        shutdown = right_gnrlsect.button('Shutdown')
-        st.session_state['shutdown'] = shutdown
-        request_agent_list = right_gnrlsect.button('Agent List?')
-        st.session_state['req_agnt_lst'] = request_agent_list
-    #
+    try:
+        platform = st.session_state['pltfrm']
+    except:
+        if 'platform' not in locals(): 
+            platform = DEFAULT_pltfrm
+            st.session_state['pltfrm'] = platform
+        else:
+            st.session_state['pltfrm'] = platform
     if 'request_agent_list' not in locals():
         request_agent_list = False
     if 'shutdown' not in locals():
         shutdown = False
     #
-    if log_st != 1 or brw_st != 1:
-        kill_agents(log_mach,directory_log,log_st,brw_st)
-        initialize_agents(log_mach, platform, password, directory_log)
-    elif request_agent_list:
-        directory_log, df_st = setup(platform,log_mach,log,browser,launcher,password)
-        st.session_state['req_agnt_lst'] = request_agent_list
-        request_agent_list = False                
-    #
-    df_cnt       = st.container()
-    df_container = df_cnt.empty()
-    if df_st.shape[0] > 0:
-        df_container.dataframe(df_st)
-        st.session_state['df_st'] = df_st
-    st.session_state['pltfrm'] = platform
-    #
+    if platform == DEFAULT_pltfrm:
+        current_tab = ''
+        center_gnrlsect.write('**Select the targeted plant(s)**')
+        if sum(v for k,v in optg.items()) == 0:
+            for itg in range(len(optplnts)):
+                optg[itg] = center_gnrlsect.checkbox(optplnts[itg])
+            # optg = center_gnrlsect.multiselect('Select one or more options',optplnts)
+        #
+        center_gnrlsect.write('\n\n**Select the interesting negotiating sites**')
+        platform = selectbox_with_default(center_gnrlsect, df['apiict'], \
+                                        DEFAULT_pltfrm, "Platform:")
+        #
+        log      = 'log@' + str(platform)
+        browser  = 'browser@' + str(platform)
+        launcher = 'launcher@' + str(platform)
+        #
+        center_gnrlsect.write('\n')
+        left_gnrlsect.header('Welcome!')
+        left_gnrlsect.write('Here you will manage your Multi-agent System.')
+        left_gnrlsect.write('You will be able of keeping track of your agents and bids, their statuses and even uploading order forms and launching them!')
+        # st.warning('Please, to start the session you need to pick a the plant(s) and the platform in this order')
+        center_gnrlsect.image('logo2.png', use_column_width = True)
+        center_gnrlsect.write('\n\n\n\n')
+        original_warning =  '<p style="font-family:Courier; color:Red; font-size: 20px;">' + \
+                            '<b><it>Please, to start the session you need to pick the plant(s) ' + \
+                            'and the platform in this order</it></b>'
+        center_gnrlsect.markdown(original_warning, unsafe_allow_html=True)
+        #
+        if platform != st.session_state['pltfrm']:
+            for itg in range(len(optplnts)):
+                if optg[itg] == 1:
+                    tgplnts.append(optplnts[itg])
+            lstsnapsh = list_snapshots(platform,tgplnts)
+            st.session_state['snapshot'] = lstsnapsh          
+            lstlots   = list_lots(lstsnapsh['snap'],tgplnts)
+            st.session_state['lots'] = lstlots
+            st.session_state['pltfrm'] = platform
+            # 
+            # Setup of contexts ... gathered from 766 lines
+            log      = 'log@' + str(platform)
+            browser  = 'browser@' + str(platform)
+            launcher = 'launcher@' + str(platform)
+            init_vars(platform)
+            directory_log, df_st = setup(center_gnrlsect,platform,log_mach, \
+                                        log,browser,launcher,password)
+            st.session_state['directory_log'] = directory_log
+            st.session_state['df_st'] = df_st
+            srvplnt   = st.session_state['mchnvec_plnt'][platform]['srvn']
+            lst_plnts = setup_plant(platform,srvplnt)
+            st.session_state['mchnvec_plnt'][platform]['plnts'][srvplnt]=tgplnts
+            #
+            st.session_state['placeholder'].empty()
+            placeholder    = st.empty()
+            title_container= st.container()
+            left_gnrlsect, center_gnrlsect, right_gnrlsect = title_container.columns((2,4,1))
+            left_gnrlsect.image('logo.png', width=128)
+            st.session_state['placeholder'] = placeholder
+        #
     if platform != DEFAULT_pltfrm:
-        st.markdown("**_____________________________________________________________________**")
-        # 
-        # Orders panel (inside the platform)
+        log      = 'log@' + str(platform)
+        browser  = 'browser@' + str(platform)
+        launcher = 'launcher@' + str(platform)         
+        # init_vars(platform)
+        if 'directory_log' in st.session_state:
+            directory_log = st.session_state['directory_log']
+            df_st         = st.session_state['df_st']
+            log_st, brw_st= check_agents(log_mach, platform, password, directory_log)
+        #
+        # Setting interaction buttons.
+        shutdown = right_gnrlsect.button('Shutdown')
+        st.session_state['shutdown'] = shutdown
+        request_agent_list = right_gnrlsect.button('Agent List?')
+        st.session_state['req_agnt_lst'] = request_agent_list
+        #
+        if log_st != 1 or brw_st != 1: # If both are 1, platform and agents are running.
+            kill_agents(log_mach,directory_log,log_st,brw_st)
+            initialize_agents(log_mach, platform, password, directory_log)
+            log_st, brw_st = check_agents(log_mach, platform, password, directory_log)
+            fd,path = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
+            st.session_state['pltvec'][platform] = {}
+            st.session_state['pltvec'][platform]['local_log'] = path
+        elif request_agent_list:
+            directory_log, df_st = setup(center_gnrlsect,platform,log_mach,log,browser,launcher,password)
+            st.session_state['req_agnt_lst'] = request_agent_list
+            request_agent_list = False
+            fd,path = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
+            st.session_state['pltvec'][platform] = {}
+            st.session_state['pltvec'][platform]['local_log'] = path   
+        #
+        if df_st.shape[0] > 0:
+            st.session_state['df_st'] = df_st
+            st.markdown("**_____________________________________________________________________**")            
+        #
+        #
+        #
         vplntsel = False
         if 'current_tab' not in locals():
             old_tab  = ''
         else:
             old_tab  = current_tab
-        current_tab = tabs(st,main_tabs)
+        #
+        over_theme = {'txc_inactive': '#ffffff'}
+        current_tab = hc.nav_bar(
+            menu_definition=menu_data,
+            override_theme=over_theme,
+            home_name='Home',
+            # login_name='Logout',
+            hide_streamlit_markers=False, #will show the st hamburger as well as the navbar now!
+            sticky_nav=True, #at the top or not
+            sticky_mode='pinned', #jumpy or not-jumpy, but sticky or pinned
+            )
+        #
+        #get the id of the menu item clicked --> current_tab
+        #
         if old_tab != current_tab:
             if 'request_agent_list'  in st.session_state:
                 request_agent_list = st.session_state['req_agnt_lst']
@@ -681,10 +834,11 @@ def main():
                 machine    = st.session_state['mchn_ordr']
             else:
                 machine = DEFAULT_ordrs
+            #
             if 'platform' in locals() and 'machine' in locals():
                 lst_orders = setup_order(platform,machine)
-            if 'uploaded_file' in st.session_state:
-                uploaded_file = st.session_state['uploaded_file']
+            # if 'uploaded_file' in st.session_state:
+            #     uploaded_file = st.session_state['uploaded_file']
             if platform in st.session_state['mchnvec_ordr']:
                 if machine in st.session_state['mchnvec_ordr'][platform]['ords'].keys():
                     ext_ordrs  = st.session_state['mchnvec_ordr'][platform]['ords'][machine]
@@ -709,14 +863,18 @@ def main():
                 if st.session_state['PS'] is not None:
                     press_plant1 = st.session_state['PS']
                     plntsel    = st.session_state['plntsel']
-    else:
-        current_tab = ''
-        if 'pltfrm' in st.session_state:
-            left_gnrlsect.header('Welcome!')
-            left_gnrlsect.write('Here you will manage your Multi-agent System.')
-            left_gnrlsect.write('You will be able of keeping track of your agents and bids, their statuses and even uploading order forms and launching them!')
-            st.warning('Please, to start the session you need to pick a value')
-            center_gnrlsect.image('logo2.png', use_column_width = True)
+    #
+    if current_tab == 'Home':
+        # st.write(st.session_state['mchn_ordr'], 'Order')
+        # st.write(st.session_state['mchn_plnt'], 'Plant')
+        df_cnt       = st.container()
+        df_container = df_cnt.empty()
+        try:
+            df_st = st.session_state['df_st']
+        except:
+            df_st = pd.DataFrame()
+        if df_st.shape[0] > 0:
+            df_container.dataframe(df_st)
     #
     if current_tab == 'ORDERS':
         #
@@ -724,22 +882,53 @@ def main():
         # usar las variables globales para mantener la lógica y el control ...
         st.empty()
         left_ordr, center_ordr, right_ordr = st.columns((1,2,1))
-        machine  = selectbox_with_default(left_ordr,df2['machines'], machine)
+        df_cnt       = center_ordr.container()
+        df_container = df_cnt.empty()
+        st.markdown("**_____________________________________________________________________**")
+        try:
+            df_st = st.session_state['df_st']
+        except:
+            st.warning("Error: DF_ST not defined")
+        #
+        with left_ordr:
+            machine = option_menu("Machines:", options = machines_parser,
+                                    default_index = 0,
+                                    menu_icon="cast",
+                                    styles={
+                    "container": {"padding": "5!important", "background-color": "#ffffff"},
+                    "icon": {"color": "blue", "font-size": "18px"}, 
+                    "nav-link": {"font-size": "14px", "text-align": "left", "margin":"0px", "--hover-color": "#ADD8E6"},
+                    "nav-link-selected": {"background-color": "#ADD8E6"},
+                    })
+        #machine  = selectbox_with_default(left_ordr,df2['machines'], machine)
         cnt1 = center_ordr.empty()
         rght1= right_ordr.empty()
+        # pdb.set_trace()
+        rght1.write(':'.join(tgplnts))
+        pdb.set_trace()
         if st.session_state['mchn_ordr'] == DEFAULT_ordrs:
             cnt11 = cnt1.write('No Service Machine Selected')
-        if st.session_state['mchn_ordr'] != machine and machine != DEFAULT_ordrs: # Change of Machine
+        if st.session_state['mchn_ordr'] != machine and machine != DEFAULT_ordrs and \
+                             st.session_state['mchn_ordr'] != DEFAULT_ordrs: # Change of Machine
             lst_orders = setup_order(platform,machine)
-        # Select orders when the machine has been setled up
-        if st.session_state['mchn_ordr'] != DEFAULT_ordrs: 
+        if st.session_state['mchn_ordr'] != DEFAULT_ordrs: # Machine for orders selected 
             cnt1 = cnt1.empty()
-            uploaded_file = cnt1.file_uploader("Load Orders File", type=['csv'])
-        if uploaded_file != None and 'uploaded_file' not in st.session_state:
-            ordf = uploaded_file.name
-            st.session_state['uploaded_file'] = uploaded_file
-            if 'detord' in st.session_state:
-                st.session_state.pop('detord')
+            lstlots = st.session_state['lots'].keys().tolist()
+            cnt1.write('* Select the relevant Lots to be scheduled *')
+            lotsdef = cnt1.checkbox(lstlots)  # lots to be used  ...
+
+        pdb.set_trace()
+        # if uploaded_file != None:
+        #     if 'uploaded_file' not in st.session_state:
+        #         ordf = uploaded_file.name
+        #         st.session_state['uploaded_file'] = uploaded_file
+        #         if 'detord' in st.session_state:
+        #             st.session_state.pop('detord')
+        #     else:
+        #         ordf = uploaded_file.name
+        #         st.session_state['uploaded_file'] = uploaded_file
+        #         if 'detord' in st.session_state:
+        #             st.session_state.pop('detord')
         ext_ordrs= []
         if platform in st.session_state['mchnvec_ordr'].keys():
             if machine in st.session_state['mchnvec_ordr'][platform]['ords'].keys():
@@ -758,7 +947,7 @@ def main():
                     rgth1.write('Order Launched')
                     st.session_state['OL'] = None
                     st.session_state['ordf'] = None
-                    directory_log, df_st = setup(platform,log_mach,log,browser,\
+                    directory_log, df_st = setup(center_gnrlsect,platform,log_mach,log,browser,\
                                                 launcher,password)
                     if df_st.shape[0] > 0:
                         df_container.empty()
@@ -770,11 +959,22 @@ def main():
                     st.session_state['OL'] = pressLO
                     st.session_state['ordf'] = ordf                    
     #
-    # Segunda parte
+    # Second part
     if current_tab == 'PLANTS':
         st.empty()
         left_plnt, centr_plnt, right_plnt = st.columns((1,2,1))
-        plant_mchn = selectbox_with_default(left_plnt,df3['machines'],plant_mchn)
+        with left_plnt:
+            plant_mchn = option_menu("Plant Selection", options = machines_parser,
+                                    default_index = 0,
+                                    menu_icon="minecart",
+                                    styles={
+                    "container": {"padding": "5!important", "background-color": "#ffffff"},
+                    "icon": {"color": "blue", "font-size": "20px"}, 
+                    "nav-link": {"font-size": "13px", "text-align": "left", "margin":"0px", "--hover-color": "#ADD8E6"},
+                    "nav-link-selected": {"background-color": "#ADD8E6"},
+                    }
+                    )
+        # plant_mchn = selectbox_with_default(left_plnt,df3['machines'],plant_mchn)
         cnt_plnt   = centr_plnt.empty()
         if st.session_state['mchn_plnt'] != plant_mchn:
             lst_plnts = setup_plant(platform,plant_mchn)
@@ -805,7 +1005,7 @@ def main():
                     st.session_state['PS']   = None
                     st.session_state['psel'] = None
                     press_plant1 = False
-                    directory_log, df_st = setup(platform,log_mach,log,browser,\
+                    directory_log, df_st = setup(center_gnrlsect,platform,log_mach,log,browser,\
                                                 launcher,password)
                     if df_st.shape[0] > 0:
                         df_container.empty()
@@ -819,14 +1019,62 @@ def main():
             st.session_state['plntsel'] = plntsel            
         if plntsel != DEFAULT_plnts and plntsel != st.session_state['plntsel']:
             st.session_state['plntsel'] = plntsel
-    #
-    # Thrid part
+    # Third part
     if current_tab == 'OUTCOME':
         #
+        st.empty()
+        left_outcm, centrleft_outcm,right_outcm = st.columns((1,1,3))
+        df_seleplnt_cnt= left_outcm.container()
+        df_seleordr_cnt= centrleft_outcm.container()
+        #extraer TODAS las plantas activas
+        plnt_list = []
+        ordr_list = []
+        # pdb.set_trace()
+        for mach in st.session_state['mchnvec_plnt'][platform]['plnts'].keys():
+            for i in st.session_state['mchnvec_plnt'][platform]['plnts'][mach]: plnt_list.append(i)
+        for mach in st.session_state['mchnvec_ordr'][platform]['ords'].keys():
+            for j in st.session_state['mchnvec_ordr'][platform]['lnos'][mach]: ordr_list.append(j['oname'])
+        plnt_outcm_list = list(set(plnt_list))
+        ordr_outcm_list = list(set(ordr_list))
+        with df_seleplnt_cnt:
+                plnt_selection = option_menu("Plant Selection", plnt_outcm_list,
+                                default_index = 0,
+                                menu_icon="building",
+                                styles={
+                "container": {"padding": "5!important", "background-color": "#ffffff"},
+                "icon": {"color": "blue", "font-size": "20px"}, 
+                "nav-link": {"font-size": "13px", "text-align": "left", "margin":"0px", "--hover-color": "#ADD8E6"},
+                "nav-link-selected": {"background-color": "#ADD8E6"},
+                }
+                )
+        if plnt_selection:
+            with df_seleordr_cnt:
+                    ordr_selection = option_menu("Order Selection", ordr_outcm_list,
+                                    default_index = 0,
+                                    menu_icon="envelope",
+                                    styles={
+                    "container": {"padding": "5!important", "background-color": "#ffffff"},
+                    "icon": {"color": "blue", "font-size": "20px"}, 
+                    "nav-link": {"font-size": "13px", "text-align": "left", "margin":"0px", "--hover-color": "#ADD8E6"},
+                    "nav-link-selected": {"background-color": "#ADD8E6"},
+                    }
+                    )
+                    coil_selection = option_menu("Coil Selection", st.session_state['mchnvec_ordr'][platform]['clts'],
+                                    default_index = 0,
+                                    menu_icon="box-fill",
+                                    styles={
+                    "container": {"padding": "5!important", "background-color": "#ffffff"},
+                    "icon": {"color": "blue", "font-size": "20px"}, 
+                    "nav-link": {"font-size": "13px", "text-align": "left", "margin":"0px", "--hover-color": "#ADD8E6"},
+                    "nav-link-selected": {"background-color": "#ADD8E6"},
+                    }
+                    )        
         # We check the last date for the log.log file
         if lastlog_date:
+            print(lastlog_date, 'Here')
             if (datetime.datetime.now() - lastlog_date).total_sconds() > 60:
                 lastlog = recovery_log(platform)
+                print(lastlog, 'Here 2')
                 if lastlog:
                     lastlog_date = datetime.datetime.now()
                     loga = lastlog['mainlog']
@@ -834,11 +1082,12 @@ def main():
                     sbst = auctions_log(loga,logb)
         else:
                 lastlog = recovery_log(platform)
+                print(lastlog, 'HERE NO 2')
                 if lastlog:
                     lastlog_date = datetime.datetime.now()
                     loga = lastlog['mainlog']
                     logb = lastlog['metadata']
-                    sbst = auctions_log(loga,logb)            
+                    sbst = auctions_log(loga,logb)           
         pdb.set_trace()
     if shutdown:
         # Si, hay que eliminar las carpetas . De hecho hay que procesar todas
@@ -863,7 +1112,7 @@ def main():
                 out_2 = subprocess.Popen(killall, stdout=None, stdin=None, stderr=None, \
                                 close_fds=True, shell=True, universal_newlines = True)
         #reiniciar también session state variables
-        restart_vars(platform,log_mach,log, browser, launcher,password)
+        restart_vars(center_gnrlsect,platform,log_mach,log, browser, launcher,password)
 #
 if __name__ == "__main__":
     main()

@@ -325,250 +325,6 @@ def launch_plant(plant, machine, my_dict, platform, log, browser, password):
                 st.session_state['mchnvec_plnt'][platform]['plnts'][machine].append(plant)
     return(None)
 #
-def read_log_for_coil (ordr_selec,ordr_machine,coil_sel, directory_log, platform, password):
-    home = str(Path.home())
-    #path = home+str(directory_log[1:])+"/log.log"
-    path = home+"/logtesteo.log"
-    search_str_coil = 'ENDEDUP'
-    search_str = '"location_2":"END"'
-    #coil_selected = coil_sel+'@'+platform
-    coil_selected = coil_sel+'@apiict00.etsii.upm.es'
-    l_plnt= []
-    l_coil = []
-    n_coils_auction = []
-    time_auc = []
-    time_coil = []
-    lst_offer = []
-    lst_bids = []
-    outcome = []
-    df_s1 = pd.DataFrame()
-    df_c = pd.DataFrame()
-    pdb.set_trace()
-    with open(path) as f:
-        for line in f.readlines()[:]:
-            if search_str in line:  # find search_str
-                time = line.split(';')[0]
-                time_auc.append(time)
-                n = line.find("{")
-                a = line[n:]
-                l_plnt.append(a)
-            if search_str_coil in line: 
-                time = line.split(';')[0]
-                time_coil.append(time)
-                n_c = line.find("msg")
-                a_c = line[n_c:]
-                l_coil.append(a_c)
-    df_0 = pd.DataFrame(l_plnt, columns=['register'])
-    df_1 = pd.DataFrame(l_coil, columns=['register'])
-    if not(df_1.empty):
-        for ind in df_1.index:
-            if ind == 0:
-                #2022-06-17 11:18:44,442;INFO;coil;./log.py;[{"purpose":"inform log","from":"c006@apiict00.etsii.upm.es","id":"c006@apiict00.etsii.upm.es","to":"log@apiict00.etsii.upm.es","msg":"ENDEDUP: c006@apiict00.etsii.upm.es, code:CO202110-073-07 , order: O202110-073, by: 2022-06-17 11:18:44, offer: 673.2"}]
-                #ver si esto se puede reescribir y cambiar el espacio de code
-                #hay que filtrar por order
-                linea = df_1.loc[ind, 'register'].split('"')[2].split(' ')
-                keys= linea[0:len(linea):2]
-                offer = keys[-1]
-                vals= linea[1:len(linea):2]
-                idx = {'wincoil':'ENDEDUP:','code':'code:','Order':'order:'}
-                dct = {'Order':ordr_selec, 'order machine':ordr_machine, 'offer':offer}
-                for i in idx.keys():
-                    dct[i] = vals[keys.index(idx[i])]
-                df_s1 = pd.DataFrame.from_dict([dct])
-                lst_offer.append(offer)
-            else:
-                linea_1 = df_1.loc[ind, 'register'].split('"')[2].split(' ')
-                keys_1= linea_1[0:len(linea_1):2]
-                offer_1 = keys_1[-1]
-                vals_1= linea_1[1:len(linea_1):2]
-                idx_1 = {'wincoil':'ENDEDUP:','code':'code:','Order':'order:'}
-                dct_1 = {'Order':ordr_selec, 'order machine':ordr_machine,'offer':offer_1}
-                for i in idx_1.keys():
-                    dct_1[i] = vals_1[keys_1.index(idx_1[i])]
-                c = pd.DataFrame.from_dict([dct_1])
-                df_s1 = df_s1.append(c)
-                lst_offer.append(offer_1)
-    if not(df_0.empty):
-        for ind in df_0.index:
-            if ind == 0:
-                element1 = df_0.loc[ind, 'register'].split('{')[1].split(',"gantt":')[0]
-                element2 = df_0.loc[ind, 'register'].split('{')[-1].split('}')[2].split(']')[0]
-                element = '{'+ element1+element2+'}'
-                z = json.loads(element) #dictionary
-                active_coils_0 = z.pop('active_coils')
-                n_coils_auction.append(len(set(active_coils_0)))
-                auction_coils = z.pop('auction_coils')
-                if z['coil_auction_winner'] == coil_selected:
-                    outcome.append('WON')
-                else:
-                    outcome.append('LOST')
-                lst_bids.append(z['bid'])
-                df = pd.DataFrame.from_dict([z])
-            else:
-                element_1 = df_0.loc[ind, 'register'].split('{')[1].split(',"gantt":')[0]
-                element_2 = df_0.loc[ind, 'register'].split('{')[-1].split('}')[2].split(']')[0]
-                element = '{'+ element_1+element_2+'}'
-                y = json.loads(element)
-                active_coils = y.pop('active_coils')
-                n_coils_auction.append(len(set(active_coils)))
-                auction_coils = y.pop('auction_coils')
-                if len(set(outcome)) == 1 : #check if the coil has already won
-                    lst_bids.append(y['bid'])
-                    if y['coil_auction_winner'] == coil_selected:
-                        outcome.append('WON')
-                    else:
-                        outcome.append('LOST')
-                b = pd.DataFrame.from_dict([y])
-                df = df.append(b)
-    #df for order
-    df_s1['offers'] = lst_offer
-    df_s1['time_ordr'] = time_coil
-    df_s1['n_coils_auction'] = n_coils_auction
-    df_s1 = df_s1.reset_index(drop=True)
-    #df for the coil
-    d ={'time_coil' : time_coil[:len(outcome)],
-            'offers' : lst_bids,
-            'outcome' : outcome
-        }
-    df_c = pd.DataFrame.from_dict(d)
-    return(df_s1, df_c)
-#
-def read_log_for_plnt(plant_selec,plant_machine, directory_log, platform, password, coil_sel = 'c009'):
-    home = str(Path.home())
-    #path = home+str(directory_log[1:])+"/log.log"
-    path = home+"/logtesteo.log"
-    #search_str = '{"id":"'+plant_selec+'@'+platform+'","agent_type":"VA","location_1"'
-    search_str = '{"id":"va09@apiict00.etsii.upm.es","agent_type":"VA","location_1"'
-    search_str_coil = 'ENDEDUP'
-    #coil_selected = coil_sel+'@'+platform
-    coil_selected = coil_sel+'@apiict00.etsii.upm.es'
-    l_plnt= []
-    l_coil = []
-    n_coils_auction = []
-    time_auc = []
-    time_coil = []
-    lst_offer = []
-    lst_bids = []
-    outcome = []
-    df = pd.DataFrame()
-    df_s1 = pd.DataFrame()
-    df_c = pd.DataFrame()
-    with open(path) as f:
-        for line in f.readlines()[:]:
-            if search_str in line:  # find search_str
-                time = line.split(';')[0]
-                time_auc.append(time)
-                n = line.find("{")
-                a = line[n:]
-                l_plnt.append(a)
-            if search_str_coil in line: 
-                time = line.split(';')[0]
-                time_coil.append(time)
-                n_c = line.find("msg")
-                a_c = line[n_c:]
-                l_coil.append(a_c)
-    df_0 = pd.DataFrame(l_plnt, columns=['register'])
-    df_1 = pd.DataFrame(l_coil, columns=['register'])
-    if not(df_1.empty):
-        for ind in df_1.index:
-            if ind == 0:
-                #2022-06-17 11:18:44,442;INFO;coil;./log.py;[{"purpose":"inform log","from":"c006@apiict00.etsii.upm.es","id":"c006@apiict00.etsii.upm.es","to":"log@apiict00.etsii.upm.es","msg":"ENDEDUP: c006@apiict00.etsii.upm.es, code:CO202110-073-07 , order: O202110-073, by: 2022-06-17 11:18:44, offer: 673.2"}]
-                #ver si esto se puede reescribir y cambiar el espacio de code
-                linea = df_1.loc[ind, 'register'].split('"')[2].split(' ')
-                keys= linea[0:len(linea):2]
-                offer = keys[-1]
-                vals= linea[1:len(linea):2]
-                idx = {'wincoil':'ENDEDUP:','code':'code:','order':'order:'}
-                dct = {'plant':plant_selec, 'plant machine':plant_machine, 'offer':offer}
-                for i in idx.keys():
-                    dct[i] = vals[keys.index(idx[i])]
-                df_s1 = pd.DataFrame.from_dict([dct])
-                lst_offer.append(offer)
-            else:
-                linea_1 = df_1.loc[ind, 'register'].split('"')[2].split(' ')
-                keys_1= linea_1[0:len(linea_1):2]
-                offer_1 = keys_1[-1]
-                vals_1= linea_1[1:len(linea_1):2]
-                idx_1 = {'wincoil':'ENDEDUP:','code':'code:','order':'order:'}
-                dct_1 = {'plant':plant_selec, 'plant machine':plant_machine,'offer':offer_1}
-                for i in idx_1.keys():
-                    dct_1[i] = vals_1[keys_1.index(idx_1[i])]
-                c = pd.DataFrame.from_dict([dct_1])
-                df_s1 = df_s1.append(c)
-                lst_offer.append(offer_1)
-    if not(df_0.empty):            
-        for ind in df_0.index:
-            if ind == 0:
-                element1 = df_0.loc[ind, 'register'].split('{')[1].split(',"gantt":')[0]
-                element2 = df_0.loc[ind, 'register'].split('{')[-1].split('}')[2].split(']')[0]
-                element = '{'+ element1+element2+'}'
-                z = json.loads(element) #dictionary
-                active_coils_0 = z.pop('active_coils')
-                n_coils_auction.append(len(set(active_coils_0)))
-                auction_coils = z.pop('auction_coils')
-                if z['coil_auction_winner'] == coil_selected:
-                    outcome.append('WON')
-                else:
-                    outcome.append('LOST')
-                lst_bids.append(z['bid'])
-                df = pd.DataFrame.from_dict([z])
-            else:
-                element_1 = df_0.loc[ind, 'register'].split('{')[1].split(',"gantt":')[0]
-                element_2 = df_0.loc[ind, 'register'].split('{')[-1].split('}')[2].split(']')[0]
-                element = '{'+ element_1+element_2+'}'
-                y = json.loads(element)
-                active_coils = y.pop('active_coils')
-                n_coils_auction.append(len(set(active_coils)))
-                auction_coils = y.pop('auction_coils')
-                if len(set(outcome)) == 1 : #check if the coil has already won
-                    lst_bids.append(y['bid'])
-                    if y['coil_auction_winner'] == coil_selected:
-                        outcome.append('WON')
-                    else:
-                        outcome.append('LOST')
-                b = pd.DataFrame.from_dict([y])
-                df = df.append(b)
-        #df for the plant
-        df['n_coils_auction'] = n_coils_auction
-        df['time_auc'] = time_auc
-        df = df.reset_index(drop=True)
-        #df for server
-        df_s1['offers'] = lst_offer
-        df_s1['time_server'] = time_coil
-        df_s1['n_coils_auction'] = n_coils_auction
-        df_s1 = df_s1.reset_index(drop=True)
-    return(df, df_s1)
-
-def execute_coil(ordr_selec,ordr_machine,outcm_coil, log_mach,directory_log, platform, password):
-    home = str(Path.home())
-    df_ordr, df_coil = read_log_for_coil (ordr_selec,ordr_machine,outcm_coil, directory_log, platform, password)
-    keys_ordr = ['time_ordr','wincoil','code','Order','offers','n_coils_auction']
-    lst_ordrhead = ['Time Auction Finished','Winner Coil','Coil Order Code','Order','Offer', 'Nº of Coils in Auction']
-    lst_coilhead = ['Time Auction','Offer','Outcome']
-    df_ordr = df_ordr[keys_ordr]
-    df_ordr.columns = lst_ordrhead
-    df_ordr = df_ordr.sort_values(by = ['Time Auction Finished'], ascending = False)
-    #
-    df_coil.columns = lst_coilhead
-    df_coil.columns = df_coil.sort_values(by = ['Time Auction'], ascending = False)
-    return (df_ordr, df_coil)
-
-def execute_plant(plant_selec,plant_machine, log_mach,directory_log, platform, password):     
-    df, df_1 = read_log_for_plnt(plant_selec,plant_machine, directory_log, platform, password)
-    keys_plnt = ['time_auc','auction_number','coil_auction_winner','n_coils_auction','bid','Profit']
-    lst_plnthead = ['Time Auction Finished','Nº of Auction','Winner Coil','Nº of Coils in Auction','Winner Value', 'Profit']
-    keys_server = ['time_server','wincoil','code','order','offers','n_coils_auction']
-    lst_serverhead = ['Time Auction Finished','Winner Coil','Coil Order Code','Order','Offer', 'Nº of Coils in Auction']
-    #
-    df_server = df_1[keys_server]
-    df_server.columns = lst_serverhead
-    df_server = df_server.sort_values(by = ['Time Auction Finished'], ascending = False)
-    #
-    df_plnt = df[keys_plnt]
-    df_plnt.columns = lst_plnthead
-    df_plnt = df_plnt.sort_values(by = ['Time Auction Finished'], ascending = False)
-    return (df_plnt,df_server)
-#
 def tabs(obj,default_tabs = [], default_active_tab=0):
     #https://discuss.streamlit.io/t/multiple-tabs-in-streamlit/1100/21
     if not default_tabs:
@@ -632,7 +388,7 @@ def setup(platform,log_mach,log, browser, launcher,password):
         directory_log = st.session_state['mchnvec_ordr'][platform]['pltd']
     elif platform != DEFAULT_pltfrm:
         directory_log = turn_on_systm(log_mach)
-        print(directory_log, 'directory del log')
+        # print(directory_log, 'directory del log')
         
         #  Machine on the Order section
         st.session_state['mchnvec_ordr'][platform] = {}
@@ -748,7 +504,87 @@ def order_process(platform,machine,detord,ordf,password):
     st.session_state['mchnvec_ordr'][platform]['lnos'][machine].append(detord)
     return(None)
 #
+def recovery_log(platform):
+    if platform in st.session_state['mchnvec_plnt']:
+        directory_log = st.session_state['mchnvec_plnt'][platform]['pltd']
+        machine       = st.session_state['mchnvec_plnt'][platform]['srvn']
+        fd,path = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
+        oshl =  " scp -p " + " @" + str(machine) +":" + directory_log + \
+                "/log.log " + path
+        err0 = subprocess.Popen(oshl, stdout=subprocess.PIPE, stdin=None, \
+                            stderr=subprocess.PIPE, close_fds=True, shell=True)
+        comm, err_1 = err0.communicate()
+        lgf  = pd.read_csv(path,sep=';',header=None)
+        lgf.columns = ['dtime','type','Agnt','Carrier','metadata']
+        # lgf['metadata'] = lgf['metadata'].apply(json.loads)
+        lgf['dtime']    = pd.to_datetime(lgf['dtime'])
+        rst  = pd.DataFrame()
+        for idx in lgf.index:
+            if len(lgf['metadata'][idx]) > 2:
+                dmd = json.loads(lgf['metadata'][idx])
+                try:
+                    if 'Profit' in dmd[0].keys():
+                        pd0 = pd.DataFrame.from_dict(dmd[0],orient='index').T
+                    else:
+                        pd0 = pd.DataFrame(dmd)
+                    pd0['idxold'] = idx
+                    rst = pd.concat([rst,pd0], axis=0)
+                except:
+                    print("k", sys.exc_info()[0]," value")
+                    pdb.set_trace()
+        rst.reset_index(inplace=True,drop=True)
+        return({'mainlog':lgf,'metadata':rst})
+    else:
+        return None
 #
+def auctions_log(lgs,mdt):
+    def sjf(s):
+        ss = s.split(',')
+        ss = [j.strip() for j in ss]
+        lss= []
+        for iss in ss:
+            if 'by' in iss:
+                jss = iss.replace('by: ','"by":"')+'"'
+            else:
+                jss = '"'+iss.replace(' ','').replace(':','":"').replace(',','","')+'"'
+            lss.append(jss)
+        scn= ','.join(lss)
+        t  = '{'+scn+'}'
+        return(t)
+    #        
+    sbs  = pd.DataFrame()
+    idx1 = mdt.loc[:,'location_2'].notnull()
+    if idx1.sum() > 0:
+        lbls = ['auction_number','coil_auction_winner','location','location_1','location_2', \
+                'ship_date','coil_length','coil_width','coil_thickness','bid','budget','Profit',\
+                'idxold']
+        sbs  = mdt.loc[idx1,lbls]
+    idx2 = mdt['msg'].notnull()
+    if idx2.sum() > 0:
+        mdt2 = mdt.loc[idx2,'msg']
+        idx3 = mdt2.str.contains('ENDEDUP')
+        sdt3 = mdt2.loc[idx3].apply(sjf)
+        sdt4 = pd.DataFrame()
+        for idx4 in sdt3.index:
+            dmd = json.loads(sdt3.loc[idx4])
+            pd0 = pd.DataFrame(dmd,index=[idx4])
+            sdt4= pd.concat([sdt4,pd0], axis=0)
+            res = sbs.merge(sdt4,left_on='coil_auction_winner',right_on='ENDEDUP')
+        res['auction_number'] = res['auction_number'].astype(int)
+        res.index = sbs.index
+    return(res)
+#
+#
+def lst_snapshots(platform):
+    if platform in st.session_state['mchnvec_plnt']: # Machine where the log agent is running
+        machine       = st.session_state['mchnvec_plnt'][platform]['srvn']
+        oshl =  " rsh " + str(machine) +" ls -lt /opt/dynreact/"
+        err0 = subprocess.Popen(oshl, stdout=subprocess.PIPE, stdin=None, \
+                            stderr=subprocess.PIPE, close_fds=True, shell=True)
+        comm, err_1 = err0.communicate()
+        lgf  = comm.split(' ')
+        flnm = ' '.join(lgf[8:])
+        return(flnm)
 #
 #
 def main():
@@ -773,6 +609,7 @@ def main():
     platforms_parser= args.platforms
     log_mach        = args.log_mach
     password        = 'DynReact'
+    lastlog_date    = None     # Holding the date of the last log.log recovery process
     df        = pd.DataFrame({
         'apiict': platforms_parser})
     df2       = pd.DataFrame({
@@ -909,6 +746,8 @@ def main():
         # Select orders when the machine has been setled up
         if st.session_state['mchn_ordr'] != DEFAULT_ordrs: 
             cnt1 = cnt1.empty()
+            # A list of snapshots and plants must be selected.
+            
             uploaded_file = cnt1.file_uploader("Load Orders File", type=['csv'])
         if uploaded_file != None and 'uploaded_file' not in st.session_state:
             ordf = uploaded_file.name
@@ -997,59 +836,24 @@ def main():
     #
     # Thrid part
     if current_tab == 'OUTCOME':
-        st.empty()
-        left_outcm, centrleft_outcm,right_outcm = st.columns((1,1,3))
-        mchn_outcm_list = []
-        for machine in st.session_state['mchnvec_ordr'][platform]['ords'].keys():
-            mchn_outcm_list.append(machine)
-        for mach in st.session_state['mchnvec_plnt'][platform]['plnts'].keys():
-            mchn_outcm_list.append(mach)
-        list(set(mchn_outcm_list))
-        mchn_outcm_list.remove('-- Select Plant Machine --')
-        mchn_outcm_list.remove('-- Select Service Machine --')
-        outcm_mchn = selectbox_with_default(left_outcm,mchn_outcm_list,DEFAULT_outcm) 
-        centrleft_outcm.write(" \
-        ")
-        #st.session_state['mchnvec_ordr'][platform]['lnos'][machine] ---> list of order codes per machine
-        #st.session_state['mchnvec_plnt'][platform]['plnts'][machine]---> list of plants per machine
-        if outcm_mchn in st.session_state['mchnvec_ordr'][platform]['ords'].keys() :
-            ordr_outcm_list = st.session_state['mchnvec_ordr'][platform]['lnos'][outcm_mchn]
+        #
+        # We check the last date for the log.log file
+        if lastlog_date:
+            if (datetime.datetime.now() - lastlog_date).total_sconds() > 60:
+                lastlog = recovery_log(platform)
+                if lastlog:
+                    lastlog_date = datetime.datetime.now()
+                    loga = lastlog['mainlog']
+                    logb = lastlog['metadata']
+                    sbst = auctions_log(loga,logb)
         else:
-            ordr_outcm_list = []
-        ordr_outcm_list = pd.DataFrame(ordr_outcm_list)
-        if outcm_mchn in st.session_state['mchnvec_plnt'][platform]['plnts'].keys() :
-            plnt_outcm_list = st.session_state['mchnvec_plnt'][platform]['plnts'][outcm_mchn]
-        else:
-            plnt_outcm_list = []
+                lastlog = recovery_log(platform)
+                if lastlog:
+                    lastlog_date = datetime.datetime.now()
+                    loga = lastlog['mainlog']
+                    logb = lastlog['metadata']
+                    sbst = auctions_log(loga,logb)            
         pdb.set_trace()
-        if outcm_mchn != DEFAULT_outcm:
-            if not(ordr_outcm_list.empty):
-                outcm_ordrs = selectbox_with_default(centrleft_outcm,ordr_outcm_list['oname'],DEFAULT_outcm_ordr) 
-                if outcm_ordrs != DEFAULT_outcm_ordr:
-                    coil_outcm_list = ordr_outcm_list.loc[ordr_outcm_list['oname']==outcm_ordrs, 'cdf']
-                    print(coil_outcm_list[:], 'coils list')
-                    outcm_coil = 'c009'
-                    #outcm_coil = selectbox_with_default(centrleft_outcm,coil_outcm_list,DEFAULT_outcm_coil)
-                    ordr_screen, coil_screen = execute_coil(outcm_ordrs, outcm_mchn,outcm_coil, log_mach,directory_log, platform, password)
-                    df_ordr_cnt       = right_outcm.container()
-                    df__ordr_container = df_ordr_cnt.empty()
-                    if ordr_screen.shape[0] > 0:
-                        df__ordr_container.dataframe(ordr_screen)
-                    if coil_screen.shape[0] > 0:
-                        st.dataframe(coil_screen)
-                    toutcm_coil = selectbox_with_default(centrleft_outcm,coil_outcm_list,DEFAULT_outcm_coil)
-            if len(plnt_outcm_list) >0 :
-                outcm_plnt = selectbox_with_default(centrleft_outcm,plnt_outcm_list,DEFAULT_outcm_plnt) 
-                if outcm_plnt != DEFAULT_outcm_plnt:
-                    right_outcm.write(" ")
-                    right_outcm.subheader(outcm_plnt)
-                    plnt_screen,server_screen = execute_plant(outcm_plnt, outcm_mchn,log_mach, directory_log,platform,password)
-                    df_plnt_cnt       = right_outcm.container()
-                    df__plant_container = df_plnt_cnt.empty()
-                    if plnt_screen.shape[0] > 0:
-                        df__plant_container.dataframe(plnt_screen)
-                    if server_screen.shape[0] > 0:
-                        st.dataframe(server_screen)
     if shutdown:
         # Si, hay que eliminar las carpetas . De hecho hay que procesar todas
         # las entradas del st.session_state[mchnvec_ordr|mchn_plnt][platform] para 
@@ -1057,18 +861,20 @@ def main():
         kill_agents(log_mach,directory_log,1,1)
         #
         for mach in st.session_state['mchnvec_ordr'][platform]['dirs'].keys():
-            killall = "rsh "+str(mach)+' "killall python3"'
-            out_1 = subprocess.Popen(killall, stdout=None, stdin=None, stderr=None, \
+            if '--' not in mach:
+                killall = "rsh "+str(mach)+' "killall python3"'
+                out_1 = subprocess.Popen(killall, stdout=None, stdin=None, stderr=None, \
                                 close_fds=True, shell=True, universal_newlines = True)
-            killall = "rsh "+str(mach)+' " rm -rf tmp*"'
-            out_2 = subprocess.Popen(killall, stdout=None, stdin=None, stderr=None, \
+                killall = "rsh "+str(mach)+' " rm -rf ./tmp*"'
+                out_2 = subprocess.Popen(killall, stdout=None, stdin=None, stderr=None, \
                                 close_fds=True, shell=True, universal_newlines = True)
         for mach in st.session_state['mchnvec_plnt'][platform]['dirs'].keys():
-            killall = "rsh "+str(mach)+' "killall python3"'
-            out_1 = subprocess.Popen(killall, stdout=None, stdin=None, stderr=None, \
+            if '--' not in mach:            
+                killall = "rsh "+str(mach)+' "killall python3"'
+                out_1 = subprocess.Popen(killall, stdout=None, stdin=None, stderr=None, \
                                 close_fds=True, shell=True, universal_newlines = True)
-            killall = "rsh "+str(mach)+' " rm -rf tmp*"'
-            out_2 = subprocess.Popen(killall, stdout=None, stdin=None, stderr=None, \
+                killall = "rsh "+str(mach)+' " rm -rf ./tmp*"'
+                out_2 = subprocess.Popen(killall, stdout=None, stdin=None, stderr=None, \
                                 close_fds=True, shell=True, universal_newlines = True)
         #reiniciar también session state variables
         restart_vars(platform,log_mach,log, browser, launcher,password)
