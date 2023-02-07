@@ -908,8 +908,7 @@ def main():
         pdb.set_trace()
         if st.session_state['mchn_ordr'] == DEFAULT_ordrs:
             cnt11 = cnt1.write('No Service Machine Selected')
-        if st.session_state['mchn_ordr'] != machine and machine != DEFAULT_ordrs and \
-                             st.session_state['mchn_ordr'] != DEFAULT_ordrs: # Change of Machine
+        if st.session_state['mchn_ordr'] != machine and machine != DEFAULT_ordrs: # Change of Machine
             lst_orders = setup_order(platform,machine)
         if st.session_state['mchn_ordr'] != DEFAULT_ordrs: # Machine for orders selected 
             cnt1 = cnt1.empty()
