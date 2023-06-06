@@ -350,7 +350,7 @@ if __name__ == "__main__":
     searching_time = datetime.datetime.now() + datetime.timedelta(seconds=args.search_time)
 
     """Save to csv who I am"""
-    br_data_df = opf.set_agent_parameters(my_name, my_full_name,0,0,0,49,'','','')
+    br_data_df = opf.set_agent_parameters(my_name, my_full_name,0,0,0,49,5,5,1,555,0,'','','')
 
     "IP"
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

@@ -30,7 +30,7 @@ class LaunchAgent(Agent):
                 await self.send(la_order_log)
                 #
                 # Active coil agents
-                contact_list = await self.list_agnts()
+                contact_list = await self.list_agnts('contact_list')
                 #
                 # Active coil properties
                 lnchr = globals.glhr_jid
@@ -62,7 +62,7 @@ class LaunchAgent(Agent):
                 name_coil = 'No'
 
             """Send searching code to browser"""
-            if la_search != "No":   # --search aa=aglist / aa=list
+            if la_search != "No":   # --search aa=aglist / aa=list  / aa=aplist
                 lnchr = globals.glhr_jid
                 tcmd  = la_search.split('=')[0]
                 pcmd  = la_search.split('=')[1]
@@ -71,7 +71,10 @@ class LaunchAgent(Agent):
                         dact = await self.list_coils()
                         print(dact.to_json(orient="records"))
                     elif pcmd.upper() == "AGLIST": # answering --search aa=aglist
-                        contact_list = await self.list_agnts()
+                        contact_list = await self.list_agnts('contact_list')
+                        print(json.dumps(contact_list))
+                    elif pcmd.upper() == "APLIST": # answering --search aa=aplist
+                        contact_list = await self.list_agnts('plant_list')
                         print(json.dumps(contact_list))
                     elif 'VA' in pcmd.upper():
                         lauct = await self.list_auctions(pcmd)
@@ -79,6 +82,9 @@ class LaunchAgent(Agent):
                 elif tcmd == 'st':
                     clist = pcmd.split(',')
                     cl_det= await self.coil_ask(lnchr,clist)
+                    print(cl_det.to_json(orient="records"))
+                elif tcmd == 'vst':
+                    cl_det= await self.va_ask(lnchr,pcmd)
                     print(cl_det.to_json(orient="records"))
                 elif tcmd == 'oc':
                     lsch  = pcmd.split(',')
@@ -154,6 +160,32 @@ class LaunchAgent(Agent):
                             globals.tosend = glist
             return(msg_df)
 
+        async def va_ask(self,launcher,i):
+            msg_df = pd.DataFrame()
+            j = i[2:].split('@')[0]
+            if j.isnumeric() and 'VA' == j[0:2].upper():
+                seqce  = int(random.random()*10000)
+                search = 'Search:GET_VA_AGENT:'+j
+                coil_to_search = opf.find_br(launcher,search,'status_va')
+                # We ask directly to the agent
+                coil_to_search['to']=i
+                cl_srch_json = coil_to_search.to_json(orient="records")
+                la_inform_cl = opf.msg_to_agnt(cl_srch_json,i)
+                await self.send(la_inform_cl)
+                time.sleep(5)
+                globals.tosend.append({'idorg':seqce,'ag_org':my_full_name,\
+                        'ag_to':i,'purpose':'status_va'})
+                msg_ar = await self.receive(timeout=wait_msg_time)
+                if msg_ar:
+                    cl_df    = pd.read_json(msg_ar.body)
+                    msg_sndr = str(msg_ar.sender).split('/')[0]
+                    recl = re.match(r'^c\d+',str(msg_sndr))
+                    if recl is not None and cl_df.loc[0,'purpose'] == 'report':
+                        msg_df = pd.concat([msg_df,cl_df],axis=0, ignore_index=True)
+                        glist = self.del_agnt(seqce,globals.tosend)
+                        globals.tosend = glist
+            return(msg_df)
+
         async def coil_updt(self,clist):
             msg_df = pd.DataFrame()
             for i in range(clist.shape[0]):
@@ -170,7 +202,8 @@ class LaunchAgent(Agent):
 
         async def err_launc_coils(self,i,id,odn):
             # Report Error to LOG
-            la_msg_rec = pd.DataFrame([],columns=['id','purpose','msg','order_code','string_operations','date'])
+            la_msg_rec = pd.DataFrame([],columns=['id','purpose','msg','order_code',\
+                                                  'string_operations','date'])
             la_msg_rec.at[0,'id'] = i
             la_msg_rec.at[0,'purpose'] = 'update coil params'
             la_msg_rec.at[0,'msg'] = "Coil code:"+id + "=>Fail update loc and budget in agent "+i
@@ -208,7 +241,7 @@ class LaunchAgent(Agent):
                     globals.tosend = glist
             return(dact)
 
-        async def list_agnts(self):
+        async def list_agnts(self,tlist):  # tlist {'contact_list' , 'plant_list'}
             r = 'Request contact list'
             #
             contact_list = []
@@ -217,8 +250,7 @@ class LaunchAgent(Agent):
             rclist   = opf.contact_list_json(rq_clist,'log')
             await self.send(rclist)
             #
-            rq_clist = opf.rq_list(my_full_name, r, globals.gbrw_jid,\
-                        'contact_list',seqce)
+            rq_clist = opf.rq_list(my_full_name, r, globals.gbrw_jid,tlist,seqce)
             rclist   = opf.contact_list_json(rq_clist,'browser')
             await self.send(rclist)
             globals.tosend.append({'idorg':seqce,'ag_org':my_full_name,\
@@ -229,7 +261,7 @@ class LaunchAgent(Agent):
                 cl_df    = pd.read_json(msg_ar.body)
                 msg_sndr = str(msg_ar.sender).split('/')[0]
                 [who, purpose] = self.ret_agnt(cl_df.loc[0,'seq'])
-                if 'brow' in msg_sndr and cl_df.loc[0,'purpose'] == 'contact_list':
+                if 'brow' in msg_sndr and cl_df.loc[0,'purpose'] == tlist:
                     contact_list = json.loads(cl_df.loc[0, 'msg'])
                     glist = self.del_agnt(seqce,globals.tosend)
                     globals.tosend = glist
@@ -328,6 +360,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     my_dir = os.getcwd()
     my_name = os.path.basename(__file__)[:-3]
+    globals.my_path = os.path.dirname(__file__)
     my_full_name = str(args.user_name)
     wait_msg_time = args.wait_msg_time
     la_started_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")

@@ -27,8 +27,7 @@ signal.signal(signal.SIGALRM,handler)
 class LogAgent(Agent):
     class LogBehav(CyclicBehaviour):
         async def run(self):
-            global wait_msg_time, logger, log_status_var, active_agents, ip_machine, active_coil_agents,\
-                   activep
+            global wait_msg_time, logger, log_status_var, active_agents, ip_machine, active_coil_agents,activep
             self.presence.on_subscribe = self.on_subscribe
             self.presence.on_unsubscribe = self.on_unsubscribe
             if log_status_var == "on":
@@ -190,11 +189,11 @@ class LogAgent(Agent):
                     if activep.shape[0] > 0:
                         if activep.loc[(activep['id']==idobj)&(activep['st']==idst),\
                                     :].shape[0] == 0:
-                            activep = pd.concat([activep],[pd.DataFrame([{'t':\
+                            activep = pd.concat([activep,pd.DataFrame([{'t':\
                                     datetime.datetime.now(),'id': idobj,\
                                     'st':idst,'IP':idip}])])
                     else:
-                        activep = pd.concat([activep],[pd.DataFrame([{'t':\
+                        activep = pd.concat([activep,pd.DataFrame([{'t':\
                                     datetime.datetime.now(),'id': idobj,\
                                     'st':idst,'IP':idip}])])
                     activep = activep.loc[activep['t'] > datetime.datetime.now() -\
