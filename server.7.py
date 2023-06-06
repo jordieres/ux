@@ -1,24 +1,33 @@
+from inspect import trace
 import sys,os, subprocess, argparse
-import time,datetime, json, math
-import tempfile, re, csv, pdb
+import time,datetime, ast, json, math
+import tempfile, re, pdb
+from pathlib import Path
+import csv, ptvsd
 #
 import numpy as np 
 import pandas as pd
 import streamlit as st
-import hydralit as hy
-# import streamlit.components.v1 as html
-import hydralit_components as hc
 #
-from pathlib import Path
-from  PIL import Image
 from dateutil.parser import parse
 from urllib.error import URLError
 from argparse import ArgumentParser
 from ast import literal_eval
-from streamlit_option_menu import option_menu
-from hydralit.hydra_app import HydraApp
-from inspect import trace
 #
+from streamlit_option_menu import option_menu
+import streamlit.components.v1 as html
+from  PIL import Image
+# import cv2
+# from st_aggrid import AgGrid
+# import plotly.express as px
+import io 
+#
+import hydralit as hy
+from hydralit.hydra_app import HydraApp
+import hydralit_components as hc
+#
+# ptvsd.enable_attach(address=('localhost', 5010))
+# ptvsd.wait_for_attach()
 #
 st.set_page_config(
     page_title='UX Industry Process Optimizer',
@@ -27,8 +36,9 @@ st.set_page_config(
     initial_sidebar_state='auto'
 )
 #
+#st.markdown(html_string, unsafe_allow_html=True)
 st.markdown("<style>.element-container{opacity:1 !important}</style>", unsafe_allow_html=True)
-#
+
 DEFAULT = '-- Pick a value --'
 DEFAULT_pltfrm = '-- Select Platform --'
 DEFAULT_mchn   = '-- Select Plant Machine --'
@@ -67,7 +77,7 @@ def selectbox_with_default(obj, values, default, text = '', sidebar = False):
     return func(text, np.insert(np.array(values[1:],object),0,default))
 #
 def get_directory(log_mach):
-    oshl = 'ssh '+str(log_mach)+' mktemp -d -p . '
+    oshl = 'rsh '+str(log_mach)+' mktemp -d -p . '
     out  = subprocess.Popen(oshl, stdout=subprocess.PIPE, stdin=None, stderr=None, \
                         close_fds=True, shell=True, universal_newlines = True)
     my_dict, err_1 = out.communicate()
@@ -78,9 +88,9 @@ def turn_on_systm(log_mach):
     # primero tengo que copiar los files de los agents y luego puedo ejecutarlos
     # Para que se ejecute en otra máquina hay que poner delante la máquina remota que lo va a ejecutar
     my_dict= get_directory(log_mach)
-    oshl_1 = ' scp agents/*.py @'+str(log_mach)+':'+my_dict + '/'
-    res = subprocess.Popen(oshl_1, stdout=subprocess.DEVNULL, stdin=None, \
-                        stderr=subprocess.DEVNULL, close_fds=True, shell=True)
+    oshl_1 = 'cd agents; scp *.py @'+str(log_mach)+':'+my_dict + '/'
+    res = subprocess.Popen(oshl_1, stdout=subprocess.PIPE, stdin=None, \
+                        stderr=subprocess.PIPE, close_fds=True, shell=True)
     return(my_dict)
 #
 def initialize_agents(machine, platform, password, my_dict):
@@ -88,54 +98,63 @@ def initialize_agents(machine, platform, password, my_dict):
         log     = 'log@' + str(platform)
         browser = 'browser@' + str(platform)
         launcher= 'launcher@' + str(platform)
-        ltmp = Path('/tmp/')
-        fd,path = tempfile.mkstemp(prefix='tmp_',dir=ltmp)
+        fd,path = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
         fp = os.fdopen(fd,'w')
         # Masking with virtualenv the appropriate releases of python3
-        fp.write("#!/bin/bash\n")
-        fp.write("python3 --version\ncd $HOME/" + str(my_dict)+'\n')
+        fp.write("#! /bin/bash\n\n")
+        fp.write("python3 --version\n\ncd $HOME/" + str(my_dict)+'\n')
+        # fp.write('/usr/bin/nohup /usr/bin/python3 ./log.py ' +\
         fp.write('/usr/bin/nohup python3 ./log.py ' + '-bag '+str(browser) +\
                 ' -u '+str(log)+' -p '+password+' -w 900 &\n')
         fp.write('sleep 2\n')
+        # fp.write('/usr/bin/nohup /usr/bin/python3 ./browser.py ' +\
         fp.write('/usr/bin/nohup python3 ./browser.py ' + ' -u '+str(browser)+\
                 ' -p '+password+' -lag '+str(log)+ ' -lhg '+str(launcher)+\
                 ' -w 900 &\n')
         fp.close()
-        #
+        subprocess.call(['chmod','0755',path])
         oshl = " scp -p " + path + " @" + str(machine) +":" + my_dict + "/agorden.sh"
         err0 = subprocess.Popen(oshl, stdout=subprocess.PIPE, stdin=None, \
                             stderr=subprocess.PIPE, close_fds=True, shell=True)
         lg0, err_0 = err0.communicate()
-        #
-        oshm = 'ssh ' + str(machine) + ' "'+' dos2unix ' + my_dict + \
-                '/agorden.sh ; chmod 0755 ' + my_dict + '/agorden.sh "'
-        errm = subprocess.Popen(oshm, stdout=subprocess.DEVNULL, stdin=None, \
-                            stderr=subprocess.DEVNULL, close_fds=True, shell=True)
+        fd2,path2 = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
+        fp = os.fdopen(fd2,'w')
+        fp.write('#! /bin/bash\n')
+        fp.write('source $HOME/dynreact/bin/activate; exec $HOME/' + str(my_dict) + '/agorden.sh\n')
+        fp.close()
+        subprocess.call(['chmod','0755',path2])
+        cpmd = " scp -p " + path2 + " @" + str(machine) +":" + my_dict + "/lanza.sh"
+        errc = subprocess.Popen(cpmd, stdout=subprocess.PIPE, stdin=None, \
+                            stderr=subprocess.PIPE, close_fds=True, shell=True)
+        lgc, err_c = errc.communicate()
+        cmd1 = ' "/usr/bin/nohup $HOME/' + str(my_dict) + '/lanza.sh 1> /dev/null 2> /dev/null &"'
+        oshl1= 'rsh '+str(machine)+ cmd1 
         time.sleep(2)
-        #
-        oshm2= 'ssh ' + str(machine) + ' "source $HOME/dynreact/bin/activate && /bin/bash ' + \
-                    my_dict + '/agorden.sh "'
-        errm2= subprocess.Popen(oshm2, stdout=subprocess.DEVNULL, stdin=None, \
-                            stderr=subprocess.DEVNULL, close_fds=True, shell=True)
-        #
+        err1 = subprocess.Popen(oshl1, stdout=subprocess.PIPE, stdin=None, \
+                            stderr=subprocess.PIPE, close_fds=True, shell=True)
+        lg1, err_1 = err1.communicate()
         if err_0.decode() == "":
             os.remove(path)
         else:
             print('Error: ' + err_0.decode() + '->' + lg0.decode())
+        if err_c.decode() != "":
+            print('Error: ' + err_c.decode() + '->' + lgc.decode())
+        if err_1.decode() != "":
+            print('Error: ' + err_1.decode() + '->' + lg1.decode())
     return(None)
 #
 def check_agents(machine, platform, password,my_dict):
     if platform != DEFAULT_pltfrm:
-        cmd  = ' "ps aux |grep python3 |grep log.py | grep ' + platform + ' | grep -v grep | wc -l"'
-        oshl = 'ssh '+str(machine) + cmd
-        out_1= subprocess.Popen(oshl, stdout=subprocess.PIPE, stdin=None, \
-                            stderr=subprocess.PIPE, close_fds=True, shell=True)
+        cmd  = " ps aux |grep python3 |grep log.py | grep " + platform + " | grep -v grep | wc -l"
+        oshl = 'rsh '+str(machine) + cmd
+        out_1= subprocess.Popen(oshl, stdout=subprocess.PIPE, stdin=None, stderr=None, \
+                            close_fds=True, shell=True)
         logst, err_1 = out_1.communicate()
         #
-        cmd  = ' "ps aux |grep python3 |grep browser.py | grep ' + platform + ' | grep -v grep | wc -l"'
-        oshl = 'ssh '+str(machine) + cmd
-        out_1= subprocess.Popen(oshl, stdout=subprocess.PIPE, stdin=None, \
-                            stderr=subprocess.PIPE, close_fds=True, shell=True)
+        cmd  = " ps aux |grep python3 |grep browser.py | grep " + platform + " | grep -v grep | wc -l"
+        oshl = 'rsh '+str(machine) + cmd
+        out_1= subprocess.Popen(oshl, stdout=subprocess.PIPE, stdin=None, stderr=None, \
+                            close_fds=True, shell=True)
         brwst, err_2 = out_1.communicate()
     else:
         logst= '0'
@@ -144,8 +163,7 @@ def check_agents(machine, platform, password,my_dict):
     return (int(logst),int(brwst))
 #
 def kill_agents(machine, my_dict,kill_log, kill_brw):
-    ltmp = Path('/tmp/')
-    fd,path = tempfile.mkstemp(prefix='tmp_',dir=ltmp)
+    fd,path = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
     fp = os.fdopen(fd,'w')
     if kill_brw > 0:
         fp.write("/usr/bin/kill -9 `ps ax |grep browser.py |grep -v grep ")
@@ -154,19 +172,13 @@ def kill_agents(machine, my_dict,kill_log, kill_brw):
         fp.write("/usr/bin/kill -9 `ps ax |grep log.py |grep -v grep ")
         fp.write("| awk '{print $1}'`\n")
     fp.close()
-    if kill_log + kill_brw > 0:
-        oshl = " scp " + path + " @" + str(machine) +":" + my_dict + "/klorden.sh"
-        err = subprocess.Popen(oshl, stdout=subprocess.DEVNULL, stdin=None, \
+    oshl = " scp " + path + " @" + str(machine) +":" + my_dict + "/klorden.sh"
+    err = subprocess.Popen(oshl, stdout=subprocess.DEVNULL, stdin=None, \
                         stderr=subprocess.DEVNULL, close_fds=True, shell=True)
-        time.sleep(1)
-        oshl1= 'ssh '+str(machine)+ ' "sh ' + str(my_dict) + '/klorden.sh "'
-        err = subprocess.Popen(oshl1, stdout=subprocess.PIPE, stdin=None, \
+    oshl1= 'rsh '+str(machine)+ ' "sh ' + str(my_dict) + '/klorden.sh"'
+    time.sleep(2)
+    err = subprocess.Popen(oshl1, stdout=subprocess.PIPE, stdin=None, \
                         stderr=subprocess.PIPE, close_fds=True, shell=True)
-        logst, err_1 = err.communicate()
-        time.sleep(1)
-        oshl2= 'ssh '+str(machine)+ ' "rm -rf ./tmp.*"'
-        err = subprocess.Popen(oshl2, stdout=subprocess.DEVNULL, stdin=None, \
-                        stderr=subprocess.DEVNULL, close_fds=True, shell=True)
     os.remove(path)
     return(None)
 #
@@ -209,7 +221,7 @@ def list_coils_orders_active(pltf, log, browser, launcher, my_dict, password):
     for j in st.session_state['mchnvec_ordr'][pltf]['dirs'].keys(): #recorre el nombre de las maquinas
         rdir = st.session_state['mchnvec_ordr'][pltf]['dirs'][j]
         if len(rdir) > 0:
-            olcs = "ssh " + str(j) + "  ps -ax | grep coil.py | grep '"
+            olcs = "rsh " + str(j) + "  ps -ax | grep coil.py | grep '"
             olcs = olcs + rdir + "' | grep -v grep "
             out  = subprocess.Popen(olcs, stdout=subprocess.PIPE, stdin=None, \
                             stderr=subprocess.PIPE,close_fds=True, shell=True, \
@@ -232,7 +244,7 @@ def list_plants_active(pltf, log, browser, launcher, my_dict,password):
     for j in st.session_state['mchnvec_plnt'][pltf]['dirs'].keys():
         rdir = st.session_state['mchnvec_plnt'][pltf]['dirs'][j]
         if len(rdir) > 0:
-            olcs = "ssh "+str(j)+" ps -ax | grep python3 | grep "+rdir
+            olcs = "rsh "+str(j)+" ps -ax | grep python3 | grep "+rdir
             olcs = olcs + " | grep -v coil.py | grep -v browser.py | grep -v grep "
             olcs = olcs + " | grep -v log.py | grep -v launcher.py "
             out  = subprocess.Popen(olcs, stdout=subprocess.PIPE, stdin=None, \
@@ -249,48 +261,33 @@ def list_plants_active(pltf, log, browser, launcher, my_dict,password):
     return n_plants, lst_plnts
 #
 def list_snapshots(pltf,lstplts):
-    olcs = "ssh "+pltf+" ls -1t *Snapshot*.csv"
+    olcs = "rsh "+pltf+" ls -1t '*Snapshot*.csv'"
     out  = subprocess.Popen(olcs, stdout=subprocess.PIPE, stdin=None, \
                                 stderr=subprocess.PIPE,close_fds=True, shell=True, \
                                 universal_newlines = True)
     outlst, err = out.communicate()
     lst_objs    = outlst.rstrip().split('\n')
-    ntpdt = pd.DataFrame()
     #
-    if len(';'.join(lst_objs)) > 0:
-        ltmp = Path('/tmp/')
-        fd,path = tempfile.mkstemp(prefix='tmp_',dir=ltmp)
-        os.close(fd)
-        orgf = lst_objs[0].replace(' ','*').replace('(','*').replace(')','*')
-        oshl = " scp @" + pltf +':"'+ orgf + '" ' + path
-        err2 = subprocess.Popen(oshl, stdout=subprocess.PIPE, stdin=None, \
-                        stderr=subprocess.PIPE, close_fds=True, shell=True)
-        outlst2, err_2 = err2.communicate()
-        time.sleep(5)
-        try:
-            tmpdt= pd.read_csv(path,sep=';', index_col=False, encoding='utf-8',
-                            header= 0, decimal=',',low_memory=False)
-            tmpdt['Present Plant'] = tmpdt['Present Plant'].str.replace('VEA','VA')
-            ntpdt= tmpdt.loc[tmpdt['Present Plant'].isin(lstplts)]
-        except FileNotFoundError:
-            print("File {} not found.".format(path))
-        except pd.errors.EmptyDataError:
-            print("File {} has No data".format(path))
-        except pd.errors.ParserError:
-            print("File {} Parse error".format(path))
-        except Exception as e:
-            print("Some other exception")
-            raise e
+    if len(lst_objs) > 0:
+        fd,path = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
+        orgf = lst_objs[0].replace(' ','\ ').replace('(','\(').replace(')','\)')
+        oshl = " scp " + " @" + pltf +":$HOME/'" + orgf + "' " + path
+        err  = subprocess.Popen(oshl, stdout=subprocess.DEVNULL, stdin=None, \
+                        stderr=subprocess.DEVNULL, close_fds=True, shell=True)
+        time.sleep(3)
+        tmpdt= pd.read_csv(path,sep=';', index_col=False, encoding='utf-8',
+                            header= 0, decimal=',')
+        tmpdt['Present Plant'] = tmpdt['Present Plant'].str.replace('VEA','VA')
+        ntpdt= tmpdt.loc[tmpdt['Present Plant'].isin(lstplts)]
         os.remove(path)
     return({'rfiles':lst_objs,'snap':ntpdt})
 #
 def list_lots(snap,tgplnts):
     res  = {}
-    if snap.shape[0] > 0:
-        lidx =[item for item in snap['Lot ID'].unique().tolist() if str(item) != 'nan' ]
-        for i in lidx:
-            tmp = snap.loc[snap['Lot ID']==i,'Production Order NR'].unique().tolist()
-            res[i] = tmp
+    lidx =[item for item in snap['Lot ID'].unique().tolist() if str(item) != 'nan' ]
+    for i in lidx:
+        tmp = snap.loc[snap['Lot ID']==i,'Production Order NR'].unique().tolist()
+        res[i] = tmp
     return(res)
 #
 def display_table(platform, log_mach, log, browser, launcher, directory, password):
@@ -322,15 +319,12 @@ def launch_orders(fp,detorder, my_dict, platform, password):
     launcher = 'launcher@' + str(platform)
     for i in detorder['cdf'].loc[:,'CoilName'].tolist(): 
         st.session_state['mchnvec_ordr'][platform]['clts'].append(i)
-    cnames  = ['c'+j for j in detorder['cdf'].loc[:,'CoilName'].tolist()]
-    lst_cns = ','.join(cnames)
+    lst_cns = ','.join(detorder['cdf'].loc[:,'CoilName'].tolist())
     lst_pss = ','.join(detorder['cdf'].loc[:,'PltSource'].tolist())
     lst_lgth= ','.join([str(int(k)) for k in detorder['cdf'].loc[:,'CoilLength'].tolist()])
     fp.write("\n/usr/bin/nohup /usr/bin/python3 " + str(my_dict)+ "/launcher.py ")
     fp.write("-oc '"+str(detorder['oname'])+"' -sg '"+str(detorder['mat']))
     fp.write("' -at "+str(detorder['thick'])+ " -wi "+str(int(detorder['width'])))
-    fp.write(" -ag "+str(detorder['ag'])+ " -asn "+str(int(detorder['asn'])))
-    fp.write(" -os "+str(int(detorder['os'])) + " -sr "+str(int(detorder['sr'])))
     fp.write(" -sd '" + detorder['dued'] + "'")
     fp.write(" -nc "+str(detorder['ncls'])+" -lc '" + lst_cns + "' -po ")
     fp.write(str(int(detorder['bdgt'])) + " -lp \'" + lst_pss + "\' -ll \'")
@@ -339,43 +333,32 @@ def launch_orders(fp,detorder, my_dict, platform, password):
     fp.write(str(launcher)+" -p "+password+" -w 40 &\n")
     return(None)
 #
-def check_remote(machine,platform):
-    key1 = 'mchnvec_plnt'
-    key2 = 'mchnvec_ordr'
-    if not machine in st.session_state[key1][platform]['dirs'].keys(): # Needed new scp
-        if not machine in st.session_state[key2][platform]['dirs'].keys(): # Needed new scp
-            tgdirs = turn_on_systm(machine)
-            st.session_state[key1][platform]['dirs'][machine] = tgdirs
-        else:
-            st.session_state[key1][platform]['dirs'][machine]= \
-                   st.session_state[key2][platform]['dirs'][machine]
-    return(st.session_state[key1][platform]['dirs'][machine])
-#
 def launch_plant(plant, machine, my_dict, platform, log, browser, password):
-    if plant in st.session_state['mchnvec_plnt'][platform]['plnts'][machine]:
-        return(None)
-    if platform != DEFAULT_pltfrm:
-        va = str(plant.lower())+'@' + str(platform)
-        ltmp = Path('/tmp/')
-        fd,path = tempfile.mkstemp(prefix='tmp_',dir=ltmp)
-        fp = os.fdopen(fd,'w')
-        fp.write("#! /bin/bash\n\n#. $HOME/dynreact/bin/activate\n\n")            
-        fp.write("\ncd " + str(my_dict)+ "\n")
-        fp.write("/usr/bin/nohup /usr/bin/python3 $HOME/"+ str(my_dict)+"/va.py ")
-        fp.write("-an '"+str(int(plant[-2:]))+"' -sd '"+str(0.25))
-        fp.write("' -bag " + str(browser) + " -lag " + str(log) + " -u ")
-        fp.write(str(va)+" -p "+password+" &\n")
-        fp.close()
-        oshl = " scp -p "+path+" @"+str(machine)+":\$HOME/"+my_dict+"/lchplanta.sh"
-        err0 = subprocess.Popen(oshl, stdout=subprocess.DEVNULL, stdin=None, \
-                            stderr=subprocess.DEVNULL, close_fds=True, shell=True)
-        oshl1= 'ssh '+str(machine)+ ' "sh ' + str(my_dict) + '/lchplanta.sh"'
-        time.sleep(1)
-        err1 = subprocess.Popen(oshl1, stdout=subprocess.DEVNULL, stdin=None, \
-                            stderr=subprocess.DEVNULL, close_fds=True, shell=True)
-        os.remove(path)
-        if plant not in st.session_state['mchnvec_plnt'][platform]['plnts'][machine]:
-            st.session_state['mchnvec_plnt'][platform]['plnts'][machine].append(plant)
+    plant = plant.lower()
+    if plant not in st.session_state['mchnvec_plnt'][platform]['plnts'][machine]:
+        if platform != DEFAULT_pltfrm:
+            va = str(plant)+'@' + str(platform)
+            #
+            fd,path = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
+            fp = os.fdopen(fd,'w')
+            fp.write("#! /bin/bash\n\n#. $HOME/dynreact/bin/activate\n\n")            
+            fp.write("\ncd " + str(my_dict)+ "\n")
+            fp.write("/usr/bin/nohup /usr/bin/python3 $HOME/"+ str(my_dict)+"/va.py ")
+            fp.write("-an '"+str(int(plant[-2:]))+"' -sd '"+str(0.25))
+            fp.write("' -bag " + str(browser) + " -lag " + str(log) + " -u ")
+            fp.write(str(va)+" -p "+password+" &\n")
+            fp.close()
+            subprocess.call(['chmod','0755',path])
+            oshl = " scp -p "+path+" @"+str(machine)+":\$HOME/"+my_dict+"/lchplanta.sh"
+            err0 = subprocess.Popen(oshl, stdout=subprocess.PIPE, stdin=None, \
+                                stderr=subprocess.PIPE, close_fds=True, shell=True)
+            oshl1= 'rsh '+str(machine)+ ' "sh ' + str(my_dict) + '/lchplanta.sh"'
+            time.sleep(1)
+            err1 = subprocess.Popen(oshl1, stdout=subprocess.PIPE, stdin=None, \
+                                stderr=subprocess.PIPE, close_fds=True, shell=True)
+            os.remove(path)
+            if plant not in st.session_state['mchnvec_plnt'][platform]['plnts'][machine]:
+                st.session_state['mchnvec_plnt'][platform]['plnts'][machine].append(plant)
     return(None)
 #
 def tabs(obj,default_tabs = [], default_active_tab=0):
@@ -419,8 +402,6 @@ def init_vars(platform):
         st.session_state['pltfrm']       = None
     if 'pltvec' not in st.session_state:
         st.session_state['pltvec']       = {}
-    if 'plntsel' not in st.session_state:
-        st.session_state['plntsel'] = []
     if 'mchn_ordr' not in st.session_state:
         st.session_state['mchn_ordr']    = DEFAULT_ordrs
     if 'mchnvec_ordr' not in st.session_state:
@@ -431,8 +412,8 @@ def init_vars(platform):
         st.session_state['mchnvec_plnt'] = {}
     if 'areaordrs' not in st.session_state:
         st.session_state['areaordrs']    = None
-    if 'tgplnts' not in st.session_state:
-        st.session_state['tgplnts'] = []
+    # if 'order_tabs' not in st.session_state:
+    #     st.session_state['order_tabs']   = []
     return(None)
 #
 def setup(center_gnrlsect,platform,log_mach,log, browser, launcher,password):
@@ -458,7 +439,7 @@ def setup(center_gnrlsect,platform,log_mach,log, browser, launcher,password):
         st.session_state['mchnvec_plnt'][platform]['plnts']= {}
         st.session_state['mchnvec_plnt'][platform]['dirs'] = {} # directory per machine
         st.session_state['mchnvec_plnt'][platform]['clts'] = [] # list of plants machine
-        # st.session_state['mchnvec_plnt'][platform]['lots'] = {} # list of lots
+        st.session_state['mchnvec_plnt'][platform]['lots'] = {} # list of lots
     if len(directory_log) > 0:
         st.session_state['directory_log'] = directory_log
     if platform != DEFAULT_pltfrm:
@@ -502,16 +483,42 @@ def setup_order(platform,machine):
     st.session_state['mchn_ordr'] = machine
     return(lst_orders)
 #
+def setup_plant(platform,machine):
+    if machine in st.session_state['mchnvec_plnt'][platform]['plnts'].keys() :
+        lst_plnts = st.session_state['mchnvec_plnt'][platform]['plnts'][machine]
+    else:
+        lst_plnts = []
+        st.session_state['mchnvec_plnt'][platform]['plnts'][machine] = lst_plnts
+        st.session_state['mchnvec_plnt'][platform]['dirs'][machine] = ''
+        st.session_state['mchnvec_plnt'][platform]['clts'].append(machine)
+    st.session_state['mchn_plnt'] = machine
+    return(lst_plnts)
+#
+def update_plant(platform,machine,log_mach,plnt):
+    if platform in st.session_state['mchnvec_plnt']:
+        directory_log = st.session_state['mchnvec_plnt'][platform]['pltd']
+    if len(st.session_state['mchnvec_plnt'][platform]['dirs'][machine]) == 0:
+        if machine   != log_mach:
+            dir_plnts = turn_on_systm(machine)
+            st.session_state['mchnvec_plnt'][platform]['dirs'][machine]=dir_plnts
+        else:
+            dir_plnts = directory_log
+            st.session_state['mchnvec_plnt'][platform]['dirs'][machine]=dir_plnts
+    else:
+        dir_plnts = st.session_state['mchnvec_plnt'][platform]['dirs'][machine]
+    lst_plnts = st.session_state['mchnvec_plnt'][platform]['plnts'][machine]    
+    return(lst_plnts)
+#
 def order_process(platform,machine,dctcoils,sellots,optplnts,password):
     #lanzar órdenes
     lst_orders = setup_order(platform,machine)
     dir_orders = st.session_state['mchnvec_ordr'][platform]['dirs'][machine]
     dfcoils = dctcoils['snap']
-    ltmp = Path('/tmp/')
-    fd,path = tempfile.mkstemp(prefix='tmp_',dir=ltmp)
+    #
+    fd,path = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
     fp = os.fdopen(fd,'w')
-    fp.write("#!/bin/bash\n\n#. $HOME/dynreact/bin/activate\n\n")
-    # pdb.set_trace()
+    fp.write("#! /bin/bash\n\n#. $HOME/dynreact/bin/activate\n\n")
+    pdb.set_trace()
     for ilt in sellots:
         ordfs = dfcoils.loc[dfcoils['Lot ID']==ilt,'Production Order NR'].unique()
         for ird in ordfs:
@@ -519,22 +526,9 @@ def order_process(platform,machine,dctcoils,sellots,optplnts,password):
             thk = dfcoils.loc[dfcoils['Production Order NR']==ird,'Final Thickness (mm)'].unique()[0]
             wid = dfcoils.loc[dfcoils['Production Order NR']==ird,'Final Width (mm)'].unique()[0]
             pry = dfcoils.loc[dfcoils['Production Order NR']==ird,'Lot Priority (Text)'].unique()[0]
-            arg = dfcoils.loc[dfcoils['Production Order NR']==ird,'Article Group'].unique()[0]
-            # lct = dfcoils.loc[dfcoils['Production Order NR']==ird,'Location Field'].unique()[0]
-            ols = dfcoils.loc[dfcoils['Production Order NR']==ird,'Oil Layer'].unique()[0]
-            sdrr= dfcoils.loc[dfcoils['Production Order NR']==ird,'Reduction Rate'].unique()[0]
-            sdr = 1
-            if float(sdrr) < 4. :
-                sdr = 0
-            asn = dfcoils.loc[dfcoils['Production Order NR']==ird,'Passivation'].unique()[0]
             ddat= parse(dfcoils.loc[dfcoils['Production Order NR']==ird,'Delivery Date Day'].unique()[0])
             sdat= ddat.strftime("%Y-%m-%d")
             ncls= dfcoils[dfcoils['Production Order NR']==ird].shape[0]
-            if isinstance(pry,str):
-                try:
-                    pry = int(pry)
-                except:
-                    pdb.set_trace()
             if math.isnan(pry):
                 pry = 0.1
             splt= ''
@@ -551,28 +545,27 @@ def order_process(platform,machine,dctcoils,sellots,optplnts,password):
             dfcoils.loc[dfcoils['Production Order NR']==ird,'Final Width (mm)'] = \
                 dfcoils.loc[dfcoils['Production Order NR']==ird,'Final Width (mm)'].replace(np.nan, 900.)
             #
-            lcls['CoilLength'] = 1.e+6 * dfcoils.loc[dfcoils['Production Order NR']==ird,'Weight (t)'] / \
+            lcls['CoilLength'] = 1.e+6 * dfcoils.loc[dfcoils['Production Order NR']==ird,'Weight (kg)'] / \
                             (dfcoils.loc[dfcoils['Production Order NR']==ird,'Final Thickness (mm)']*\
                              dfcoils.loc[dfcoils['Production Order NR']==ird,'Final Width (mm)']*7850)
             lcls.columns    = ["CoilName","PltSource","CoilLength"]
             lcls['CoilName']= lcls['CoilName'].astype(str)
             detord= {'oname':str(ird),'mat':str(mat),'thick':thk,'width':wid,'bdgt':2000*pry*ncls,\
-                    'dued': sdat,'prule':splt,'ncls':ncls,'cdf':lcls,'ag':arg,\
-                    'os':ols,'sr':sdr,'asn':asn}
+                    'dued': sdat,'prule':splt,'ncls':ncls,'cdf':lcls}
             launch_orders(fp,detord,dir_orders,platform,password)                    
             st.session_state['mchnvec_ordr'][platform]['ords'][machine].append(ird)
             st.session_state['mchnvec_ordr'][platform]['lnos'][machine].append(detord)
             st.session_state['mchnvec_ordr'][platform]['lots'][machine].append(ilt)    
     #
     fp.close()
+    subprocess.call(['chmod','0755',path])
     oshl = " scp " + path + " @" + str(machine) +":" + dir_orders + "/lchorden.sh"
-    err0 = subprocess.Popen(oshl, stdout=subprocess.DEVNULL, stdin=None, \
-                        stderr=subprocess.DEVNULL, close_fds=True, shell=True)
-    oshl1= ' ssh '+str(machine)+' " dos2unix ' + str(dir_orders) + '/lchorden.sh ; sh ' +\
-            str(dir_orders) + '/lchorden.sh"'
+    err0 = subprocess.Popen(oshl, stdout=subprocess.PIPE, stdin=None, \
+                        stderr=subprocess.PIPE, close_fds=True, shell=True)
+    oshl1= 'rsh '+str(machine)+ ' "sh ' + str(dir_orders) + '/lchorden.sh"'
     time.sleep(2)
-    err1 = subprocess.Popen(oshl1, stdout=subprocess.DEVNULL, stdin=None, \
-                        stderr=subprocess.DEVNULL, close_fds=True, shell=True)
+    err1 = subprocess.Popen(oshl1, stdout=subprocess.PIPE, stdin=None, \
+                        stderr=subprocess.PIPE, close_fds=True, shell=True)
     os.remove(path)
     time.sleep(18)
     return(None)
@@ -583,8 +576,7 @@ def recovery_log(platform):
     if platform in st.session_state['mchnvec_plnt']:
         directory_log = st.session_state['mchnvec_plnt'][platform]['pltd']
         machine       = st.session_state['mchnvec_plnt'][platform]['srvn']
-        ltmp = Path('/tmp/')
-        fd,path = tempfile.mkstemp(prefix='tmp_',dir=ltmp)
+        fd,path = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
         oshl =  " scp -p " + " @" + str(machine) +":" + directory_log + \
                 "/log.log " + path
         err0 = subprocess.Popen(oshl, stdout=subprocess.PIPE, stdin=None, \
@@ -595,7 +587,7 @@ def recovery_log(platform):
         # lgf['metadata'] = lgf['metadata'].apply(json.loads)
         lgf['dtime']    = pd.to_datetime(lgf['dtime'])
         rst  = pd.DataFrame()
-        # pdb.set_trace()
+        pdb.set_trace()
         for idx in lgf.index:
             if len(lgf['metadata'][idx]) > 2:
                 dmd = json.loads(lgf['metadata'][idx])
@@ -628,8 +620,7 @@ def auctions_log(lgs,mdt):
         scn= ','.join(lss)
         t  = '{'+scn+'}'
         return(t)
-    #
-    res = pd.DataFrame()
+    #        
     sbs  = pd.DataFrame()
     idx1 = mdt.loc[:,'location_2'].notnull()
     if idx1.sum() > 0:
@@ -701,8 +692,6 @@ def main():
         optg={}
     if 'sellots' not in locals():
         sellots={}
-    if 'lhplnts' not in locals():
-        lhplnts={}
     # 
     # pdb.set_trace()
     if 'placeholder' not in st.session_state.keys():
@@ -726,6 +715,8 @@ def main():
     except:
         if 'platform' not in locals(): 
             platform = DEFAULT_pltfrm
+            st.session_state['pltfrm'] = platform
+        else:
             st.session_state['pltfrm'] = platform
     if 'request_agent_list' not in locals():
         request_agent_list = False
@@ -769,8 +760,6 @@ def main():
             lstlots   = list_lots(lstsnapsh['snap'],tgplnts)
             st.session_state['lots'] = lstlots
             st.session_state['pltfrm'] = platform
-            st.session_state['tgplnts']= tgplnts
-            # pdb.set_trace()
             # 
             # Setup of contexts ... gathered from 766 lines
             log      = 'log@' + str(platform)
@@ -782,6 +771,8 @@ def main():
             st.session_state['directory_log'] = directory_log
             st.session_state['df_st'] = df_st
             srvplnt   = st.session_state['mchnvec_plnt'][platform]['srvn']
+            lst_plnts = setup_plant(platform,srvplnt)
+            st.session_state['mchnvec_plnt'][platform]['plnts'][srvplnt]=tgplnts
             #
             st.session_state['placeholder'].empty()
             placeholder    = st.empty()
@@ -810,16 +801,14 @@ def main():
             kill_agents(log_mach,directory_log,log_st,brw_st)
             initialize_agents(log_mach, platform, password, directory_log)
             log_st, brw_st = check_agents(log_mach, platform, password, directory_log)
-            ltmp = Path('/tmp/')
-            fd,path = tempfile.mkstemp(prefix='tmp_',dir=ltmp)
+            fd,path = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
             st.session_state['pltvec'][platform] = {}
             st.session_state['pltvec'][platform]['local_log'] = path
         elif request_agent_list:
             directory_log, df_st = setup(center_gnrlsect,platform,log_mach,log,browser,launcher,password)
             st.session_state['req_agnt_lst'] = request_agent_list
             request_agent_list = False
-            ltmp = Path('/tmp/')
-            fd,path = tempfile.mkstemp(prefix='tmp_',dir=ltmp)
+            fd,path = tempfile.mkstemp(prefix='tmp_',dir='/tmp/')
             st.session_state['pltvec'][platform] = {}
             st.session_state['pltvec'][platform]['local_log'] = path   
         #
@@ -864,12 +853,24 @@ def main():
             else:
                 machine = DEFAULT_ordrs
             #
+            # if 'platform' in locals() and 'machine' in locals():
+            #     lst_orders = setup_order(platform,machine)
+            # if platform in st.session_state['mchnvec_ordr']:
+            #     if machine in st.session_state['mchnvec_ordr'][platform]['ords'].keys():
+            #         ext_ordrs = st.session_state['mchnvec_ordr'][platform]['ords'][machine]
+            #
+            # if 'OL' in st.session_state:
+            #     if st.session_state['OL'] is not None:
+            #         pressLO = st.session_state['OL']
+            # if 'ordf' in st.session_state:
+            #     if st.session_state['ordf'] is not None:
+            #         ordf = st.session_state['ordf']
             if 'mchn_plnt' in st.session_state:
                 plant_mchn = st.session_state['mchn_plnt']
             else:
                 plant_mchn = DEFAULT_mchn
-            #if 'platform' in locals() and 'plant_mchn' in locals():
-            #     lst_plnts  = setup_plant(platform,plant_mchn)
+            if 'platform' in locals() and 'plant_mchn' in locals():
+                lst_plnts  = setup_plant(platform,plant_mchn)
             if 'plntsel' in st.session_state:
                 plntsel    = st.session_state['plntsel']
             if platform in st.session_state['mchnvec_plnt']:
@@ -954,19 +955,11 @@ def main():
                 right_ordr.write(st.session_state['mchnvec_ordr'][platform]['ords'][machine])
                 st.session_state['OL'] =None
         # pdb.set_trace()
-    # 
+
+    # Second part
     if current_tab == 'PLANTS':
         st.empty()
         left_plnt, centr_plnt, right_plnt = st.columns((1,2,1))
-        df_cnt = centr_plnt.container()
-        df_container = df_cnt.empty()
-        # st.markdown("**_____________________________________________________________________**")
-        try:
-            df_st = st.session_state['df_st']
-        except:
-            st.warning("Error: DF_ST not defined")
-        #
-        df_container.dataframe(df_st)
         with left_plnt:
             plant_mchn = option_menu("Plant Selection", options = machines_parser,
                                     default_index = 0,
@@ -979,40 +972,50 @@ def main():
                     }
                     )
         # plant_mchn = selectbox_with_default(left_plnt,df3['machines'],plant_mchn)
+        cnt_plnt   = centr_plnt.empty()
         if st.session_state['mchn_plnt'] != plant_mchn:
+            lst_plnts = setup_plant(platform,plant_mchn)
             st.session_state['mchn_plnt'] = plant_mchn
         if st.session_state['mchn_plnt'] == DEFAULT_mchn:
-            df_cnt.write('No Plant Machine Selected')
+            cnt_plnt.write('No Plant Machine Selected')
         #
-        lst_plnts = st.session_state['tgplnts']
-        if st.session_state['mchn_plnt'] != DEFAULT_mchn: 
-            df_cnt.write(' ') 
-            new_lbl2= '<p style="font-family:sans-serif; color:Blue; font-size: 24px;">Select the relevant Plants to be scheduled</p>'
-            df_cnt.markdown(new_lbl2, unsafe_allow_html=True)
-            for itp in range(len(lst_plnts)):
-                if lst_plnts[itp] not in st.session_state['plntsel']:
-                    lhplnts[itp] = df_cnt.checkbox(lst_plnts[itp])
+        if st.session_state['mchn_plnt'] != DEFAULT_mchn and plntsel == DEFAULT_plnts: 
+            cnt_plnt.empty()
+            plntsel   = cnt_plnt.selectbox('', optplnts)
+            vplntsel  = True
+        if plant_mchn != DEFAULT_mchn and plntsel != DEFAULT_plnts:
+            if not vplntsel:
+                plntsel   = st.session_state['plntsel']
+                plntsel   = cnt_plnt.selectbox('', optplnts, \
+                                    index = optplnts.index(plntsel))
+                vplntsel = True
+            if plntsel not in lst_plnts:
+                lst_plnts =  update_plant(platform,plant_mchn,log_mach,plntsel)
+                rgtha     =  right_plnt.empty()
+                rgtha.write('Plant Selected')
+                press_plant1 = rgtha.button('Activate Plant')
+                if press_plant1:
+                    if plant_mchn not in st.session_state['mchnvec_plnt'][platform]['dirs']:
+                        setup_plant(platform,plant_mchn)
+                    dir_plnts= st.session_state['mchnvec_plnt'][platform]['dirs'][plant_mchn]
+                    launch_plant(plntsel,plant_mchn,dir_plnts,platform,log,browser,password)
+                    st.session_state['PS']   = None
+                    st.session_state['psel'] = None
+                    press_plant1 = False
+                    directory_log, df_st = setup(center_gnrlsect,platform,log_mach,log,browser,\
+                                                launcher,password)
+                    if df_st.shape[0] > 0:
+                        df_container.empty()
+                        df_container.dataframe(df_st)
+                        st.session_state['df_st'] = df_st
+                    plntsel  = DEFAULT_plnts
                 else:
-                    lhplnts[itp] = False
-            df_cnt.write(' ')
-            #
-            rgtha     =  right_plnt.empty()
-            rgtha.write('Plant Selection')
-            if df_cnt.button('Activate Plant(s)'):
-                rgth1 = right_plnt.empty()
-                rgth1.write('Plant(s) being submitted')
-                dir_plnts = check_remote(plant_mchn,platform) 
-                for itp in range(len(lst_plnts)):
-                    if lhplnts[itp] and lhplnts[itp] not in \
-                                            st.session_state['plntsel']:
-                        st.session_state['plntsel'].append(lst_plnts[itp])
-                        if not plant_mchn in st.session_state['mchnvec_plnt'][platform]['plnts'].keys():
-                            st.session_state['mchnvec_plnt'][platform]['plnts'][plant_mchn] = []
-                        launch_plant(lst_plnts[itp],plant_mchn,dir_plnts,platform,log, \
-                                     browser,password)
-                rgth1.write('Plant(s) started:')
-                right_plnt.write(st.session_state['mchnvec_plnt'][platform]['plnts'][plant_mchn])
-                dir_plnts= st.session_state['mchnvec_plnt'][platform]['dirs'][plant_mchn]
+                    st.session_state['PS']   = press_plant1
+                    st.session_state['psel'] = plntsel
+        if plntsel != DEFAULT_plnts and 'plntsel' not in st.session_state:
+            st.session_state['plntsel'] = plntsel            
+        if plntsel != DEFAULT_plnts and plntsel != st.session_state['plntsel']:
+            st.session_state['plntsel'] = plntsel
     # Third part
     if current_tab == 'OUTCOME':
         #
@@ -1074,7 +1077,7 @@ def main():
                     loga = lastlog['mainlog']
                     logb = lastlog['metadata']
                     sbst = auctions_log(loga,logb)
-            else:
+        else:
                 lastlog = recovery_log(platform)
                 print(lastlog, 'HERE NO 2')
                 if lastlog:
@@ -1082,7 +1085,7 @@ def main():
                     loga = lastlog['mainlog']
                     logb = lastlog['metadata']
                     sbst = auctions_log(loga,logb)           
-        # pdb.set_trace()
+        pdb.set_trace()
     if shutdown:
         # Si, hay que eliminar las carpetas . De hecho hay que procesar todas
         # las entradas del st.session_state[mchnvec_ordr|mchn_plnt][platform] para 
@@ -1091,23 +1094,22 @@ def main():
         #
         for mach in st.session_state['mchnvec_ordr'][platform]['dirs'].keys():
             if '--' not in mach:
-                killall = "ssh "+str(mach)+' "killall python3"'
+                killall = "rsh "+str(mach)+' "killall python3"'
                 out_1 = subprocess.Popen(killall, stdout=None, stdin=None, stderr=None, \
                                 close_fds=True, shell=True, universal_newlines = True)
-                killall = "ssh "+str(mach)+' " rm -rf ./tmp*"'
+                killall = "rsh "+str(mach)+' " rm -rf ./tmp*"'
                 out_2 = subprocess.Popen(killall, stdout=None, stdin=None, stderr=None, \
                                 close_fds=True, shell=True, universal_newlines = True)
         for mach in st.session_state['mchnvec_plnt'][platform]['dirs'].keys():
             if '--' not in mach:            
-                killall = "ssh "+str(mach)+' "killall python3"'
+                killall = "rsh "+str(mach)+' "killall python3"'
                 out_1 = subprocess.Popen(killall, stdout=None, stdin=None, stderr=None, \
                                 close_fds=True, shell=True, universal_newlines = True)
-                killall = "ssh "+str(mach)+' " rm -rf ./tmp*"'
+                killall = "rsh "+str(mach)+' " rm -rf ./tmp*"'
                 out_2 = subprocess.Popen(killall, stdout=None, stdin=None, stderr=None, \
                                 close_fds=True, shell=True, universal_newlines = True)
-        # Terminar el proceso.
-        st.stop()
-        sys.exit()
+        #reiniciar también session state variables
+        restart_vars(center_gnrlsect,platform,log_mach,log, browser, launcher,password)
 #
 if __name__ == "__main__":
     main()

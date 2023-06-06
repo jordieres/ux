@@ -22,8 +22,9 @@ class LaunchAgent(Agent):
             if order_code != "No":
                 la_inform_log = opf.order_file(my_full_name, order_code, \
                            steel_grade, thickness, width_coils, \
-                           num_coils, list_coils, list_lengths, param_f, \
-                           each_coil_price, list_ware, string_operations, \
+                           num_coils, list_coils, list_lengths, param_f,\
+                           artikel_gruppe, oel_sorte, single_reduction,assivieru_ngkz,\
+                           0,each_coil_price, list_ware, string_operations, \
                            wait_msg_time,ship_date)
                 la_inform_log_json = la_inform_log.to_json(orient="records")
                 la_order_log = opf.order_to_log(la_inform_log_json, my_dir)
@@ -351,6 +352,12 @@ if __name__ == "__main__":
     parser.add_argument('-cb', '--change_budget', type=str, metavar='', required=False, default='210', help='Specify the new budget. Write between "x"')
     parser.add_argument('-na', '--name_new_budget', type=str, metavar='', required=False, default='No', help='Specify the coil of new budget. "cO202106101"')
     parser.add_argument('-F', '--parameter_F', type=int, metavar='', required=False, default=10, help='parameter_F: 10-79')
+    parser.add_argument('-ag', '--artikel_gruppe', type=str, metavar='', required=False, default='400', help='artikel_gruppe: 0-1000')   #Sergio 28/03
+    parser.add_argument('-os', '--oel_sorte', type=int, metavar='', required=False, default=5, help='oel_sorte: 0-10')   #Sergio 28/03
+    parser.add_argument('-sr', '--single_reduction', type=int, metavar='', required=False, default=1, help='single_reduction: 0 single red, 1 double red')   #Sergio 28/03
+    parser.add_argument('-asn', '--assivieru_ngkz', type=int, metavar='', required=False, default=555, help='assivieru_ngkz: 0-1000')   #Sergio 28/03
+    parser.add_argument('-ark', '--arkerung_mes', type=int, metavar='', required=False, default=555, help='arkerung_mes: 0-1000')   # JOM 6/6
+    
     # MANAGEMENT DATA
     parser.add_argument('-u', '--user_name', type=str, metavar='', required=False, help='User to the XMPP platform')  # JOM 10/10
     parser.add_argument('-p', '--user_passwd', type=str, metavar='', required=False, help='Passwd for the XMPP platform')  # JOM 10/10
@@ -374,6 +381,11 @@ if __name__ == "__main__":
     width_coils = args.width_coils
     num_coils = args.number_coils
     param_f   = args.parameter_F
+    artikel_gruppe = args.artikel_gruppe
+    oel_sorte= args.oel_sorte
+    single_reduction = args.single_reduction
+    assivieru_ngkz = args.assivieru_ngkz
+    arkerung_mes = args.arkerung_mes
     each_coil_price = round((args.price_order/args.number_coils),2)
     list_coils = args.list_coils
     list_lengths = args.list_lengths
@@ -383,10 +395,10 @@ if __name__ == "__main__":
     change_budget = args.change_budget
     name_coil = args.name_new_budget
 
-    
     """Save to csv who I am"""
     la_data_df = opf.set_agent_parameters(my_name, my_full_name,0,0,0,\
-                                          param_f,'','','')
+                         param_f,artikel_gruppe,oel_sorte,\
+                         single_reduction,assivieru_ngkz,arkerung_mes,'','','')
     
     """IP"""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

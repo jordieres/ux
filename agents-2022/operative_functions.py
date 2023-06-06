@@ -36,6 +36,7 @@ def order_file(agent_full_name, order_code, steel_grade, thickness, \
     order_msg_log.at[0, 'wait_time'] = wait_time
     order_msg_log.at[0, 'ship_date'] = shdate
     order_msg_log.at[0, 'param_f'] = param_f
+    order_msg_log.at[0, 'IP'] = globals.IP
     return order_msg_log
 
 def order_to_log(order_body,agent_directory):
@@ -1885,8 +1886,9 @@ def inform_new_order(my_full_name, msg):
     df.loc[0, 'msg'] = msg
     return df
 
-def inform_error(msg):
+def inform_error(msg,my_full_name='none'):
     df = pd.DataFrame()
+    df.loc[0, 'id'] = my_full_name
     df.loc[0, 'purpose'] = 'inform error'
     df.loc[0, 'msg'] = msg
     return df.to_json(orient="records")
@@ -1894,6 +1896,7 @@ def inform_error(msg):
 def inform_search(msg):
     df = pd.DataFrame()
     df.loc[0, 'purpose'] = 'inform search'
+    df.loc[0, 'id'] = my_full_name
     df.loc[0, 'msg'] = msg
     return df.to_json(orient="records")
 
@@ -1901,6 +1904,7 @@ def inform_log(my_full_name, msg, agent):
     df = pd.DataFrame()
     df.loc[0, 'purpose'] = 'inform log'
     df.loc[0, 'from'] = my_full_name
+    df.loc[0, 'id'] = my_full_name
     df.loc[0, 'to'] =  agent
     df.loc[0, 'msg'] = msg
     return df
@@ -1957,7 +1961,7 @@ def change_warehouse(launcher_df, clist, dact):
             #
             sstr = str(int(wtt))
             sbdg = str(int(bdg))
-            oshl = "/usr/bin/nohup /usr/bin/python3 "+my_dir+"/coil.py "
+            oshl = "/usr/bin/nohup /usr/bin/python3 "+globals.my_path+"/coil.py "
             oshl = oshl+" -w 12000 -v "+ sstr
             oshl = oshl+" -st 15000 -s on -l "+pz+" -b "+sbdg+" -c "+ z
             oshl = oshl+" -o " + odn + " -an " + str(nid) + " -ph " + pth

@@ -1,4 +1,4 @@
-import os, datetime, subprocess, pdb
+import os, datetime, subprocess,re, pdb
 import math, json, time, statistics, globals
 import numpy as np
 import pandas as pd
@@ -10,8 +10,8 @@ from spade.message import Message
 """General Functions"""
 
 def order_file(agent_full_name, order_code, steel_grade, thickness, \
-               width_coils, num_coils, list_coils, list_lengths, param_f, \
-               each_coil_price, list_ware, string_operations, wait_time,\
+               width_coils, num_coils, list_coils, list_lengths, param_f, artikel_gruppe,\
+               oel_sorte, single_reduction, assivieru_ngkz, arkerung_mes, each_coil_price, list_ware, string_operations, wait_time,\
                shdate):
     order_msg_log = pd.DataFrame([], columns=['id', 'order_code', \
                        'steel_grade', 'thickness_coils', 'width_coils', \
@@ -36,6 +36,11 @@ def order_file(agent_full_name, order_code, steel_grade, thickness, \
     order_msg_log.at[0, 'wait_time'] = wait_time
     order_msg_log.at[0, 'ship_date'] = shdate
     order_msg_log.at[0, 'param_f'] = param_f
+    order_msg_log.at[0, 'artikel_gruppe'] = artikel_gruppe
+    order_msg_log.at[0, 'oel_sorte'] = oel_sorte
+    order_msg_log.at[0, 'single_reduction'] = single_reduction
+    order_msg_log.at[0, 'assivieru_ngkz'] = assivieru_ngkz
+    order_msg_log.at[0, 'arkerung_mes'] = arkerung_mes
     order_msg_log.at[0, 'IP'] = globals.IP
     return order_msg_log
 
@@ -327,7 +332,7 @@ def auction_blank_df():
 
 
 def set_agent_parameters(agent_name, agent_full_name,ancho,espesor,\
-                         largo,param_f,sgrade,location,ordr):
+                         largo,param_f,artikel_gruppe,oel_sorte,single_reduction,assivieru_ngkz, arkerung_mes, sgrade,location,ordr):
     agent_data = pd.DataFrame([], columns=['id', 'agent_type', 'location_1', \
                  'location_2', 'location', 'purpose', 'request_type', \
                  'time', 'activation_time', 'int_fab'])
@@ -376,6 +381,11 @@ def set_agent_parameters(agent_name, agent_full_name,ancho,espesor,\
     elif agent_name == "nww":
         agent_data.loc[0, 'location'] = agent_full_name.split('_')[1]
         agent_data.loc[0, 'param_f'] = param_f
+        agent_data.loc[0, 'artikel_gruppe'] = artikel_gruppe
+        agent_data.loc[0, 'oel_sorte'] = oel_sorte
+        agent_data.loc[0, 'single_reduction'] = single_reduction
+        agent_data.loc[0, 'assivieru_ngkz'] = assivieru_ngkz
+        agent_data.loc[0, 'arkerung_mes'] = arkerung_mes
     elif agent_name == "va":
         agent_data = agent_data.reindex(columns=['id', 'agent_type', \
                      'purpose', 'request_type', 'time', 'activation_time', \
@@ -386,7 +396,7 @@ def set_agent_parameters(agent_name, agent_full_name,ancho,espesor,\
         agent_data.loc[0, 'coil_thickness'] = espesor
         agent_data.loc[0, 'coil_length'] = largo
         agent_data.loc[0, 'sgrade'] = sgrade
-        agent_data.loc[0, 'localtion'] = location
+        agent_data.loc[0, 'location'] = location
         agent_data.loc[0, 'order'] = ordr
 
     elif agent_name == "tc":
@@ -850,7 +860,8 @@ def get_wh_list(br_data_df, agent_full_name, agent_directory):
     jid_names = pd.DataFrame()
     for i in tr_list:
         a = agents_df.loc[agents_df['Name'] == i]
-        jid_names = jid_names.append(a)
+        #jid_names = jid_names.append(a)
+        jid_names = pd.concat([jid_names,a], axis=0,ignore_index=True)
     active_users_location_df = active_users_location_df.rename(columns={'from_to': 'segment'})
     results = active_users_location_df.merge(segment_df, on='segment')
     results = results.rename(columns={'agent': 'Name'})
@@ -899,7 +910,8 @@ def get_coil_list(br_data_df, agent_full_name, agent_directory):
     jid_names = pd.DataFrame()
     for i in tr_list:
         a = agents_df.loc[agents_df['Name'] == i]
-        jid_names = jid_names.append(a)
+        #jid_names = jid_names.append(a)
+        jid_names = pd.concat([jid_names,a], keys=0,ignoreindex=True)
     active_users_location_df = active_users_location_df.rename(\
                     columns={'from_to': 'segment'})
     results = active_users_location_df.merge(segment_df, on='segment')
@@ -957,7 +969,8 @@ def br_get_requested_df(agent_name, *args):
             element = df_0.loc[ind, 'register']
             y = json.loads(element)
             b = pd.DataFrame.from_dict(y)
-            df = df.append(b)
+            #df = df.append(b)
+            df = pd.concat([df,b], axis=0, ignore_index=True)
     df = df.reset_index(drop=True)
     if args == "coils":  # if ca is requesting
         df = df.loc[0, 'to_do'] == "search_auction"  # filters coils searching for auction
@@ -1192,58 +1205,162 @@ def production_cost(configuracion_df,coil_df, i):
     cost = float(z * 4 + m * 0.05 + n * 2)
     return cost
 
-def transport_cost(to):
+def transport_cost(to, From_location):
+    
     costes_df = pd.DataFrame()
     costes_df['From'] = ['NWW1', 'NWW1', 'NWW1','NWW1','NWW1','NWW3','NWW3','NWW3','NWW3','NWW3','NWW4','NWW4','NWW4','NWW4','NWW4']
     costes_df['CrossTransport'] = [24.6, 24.6, 0, 0, 55.6, 74.8, 74.8, 50.2, 50.2, 32.3, 71.5, 71.5, 46.9,46.9, 0]
     costes_df['Supply'] = [24.6, 24.6, 21.1, 21.1, 5.7, 24.6, 24.6, 21.1, 21.1, 5.7, 24.6, 24.6, 21.1, 21.1, 5.7]
     costes_df['To'] = ['va08', 'va09', 'va10','va11','va12','va08','va09','va10','va11','va12','va08','va09','va10','va11','va12']
+
+    
+
+    if From_location not in costes_df['From'].values:
+        #new_row = {'From': From_location, 'CrossTransport': 100, 'Supply': 100, 'To': to}
+        #costes_df = costes_df.append(new_row, ignore_index=True)
+        new_row = pd.DataFrame({'From': [From_location], 'CrossTransport': [100], 'Supply': [100], 'To': [to]})
+        costes_df = pd.concat([costes_df, new_row], axis=0, ignore_index=True)
+        #costes_df = pd.concat([costes_df,new_row],axis=0, ignore_index=True)
     costes_df = costes_df.loc[costes_df['To'] == to]
+    
     costes_df = costes_df.reset_index(drop=True)
+    print(costes_df)
     return costes_df
+    
+def energy_cost(df_parameters_energy, va_data_df, price_energy_consumption, winner_df, coil_msgs_df,i):
+    if winner_df.empty: 
+        ###############################################################################################in the first auction we use the average time
+        production_time=20
+        speed= 0.35
+    else:
+        speed = va_data_df.loc[0, 'setup_speed'] 
+        production_time = va_data_df.loc[0, 'processing_time'] /3600
+        #speed = 0.25
+        # production_time = va_data_df.loc[0,'AVG(ca_op_time)'] +  va_data_df.loc[0,'AVG(tr_op_time)']   # Production time of the coil at the finishing line (min) ejemplo
+    to= va_data_df.loc[0,'id'].split('@')[0]
+    if to == 'va09' or to == 'va10' or to == 'va11' or to == 'va12':
+        a = df_parameters_energy.loc[to,'a']
+        b = df_parameters_energy.loc[to,'b']
+        c = df_parameters_energy.loc[to,'c']
+        d = df_parameters_energy.loc[to,'d']
+        e = df_parameters_energy.loc[to,'e']
+        f = df_parameters_energy.loc[to,'f']
+        melting_code = df_parameters_energy.loc[to,'melting_code']
+        
+        
+        if va_data_df.loc[0,'coil_thickness'] < coil_msgs_df.loc[0,'espesor']:                         ##### Check if the covering is necessary
+            tinlayerup = (coil_msgs_df.loc[i,'espesor'] - va_data_df.loc[0,'coil_thickness']) / 2      #####we don´t know the top coating, so half
+            tinlayerdown = (coil_msgs_df.loc[i,'espesor'] - va_data_df.loc[0,'coil_thickness']) / 2    #####we don´t know the down coating, so half
+        else:
+            tinlayerup=0
+            tinlayerdown=0
+        
+        power = a + va_data_df.loc[0,'coil_width'] * b + va_data_df.loc[0, 'coil_thickness'] * c + speed * f + tinlayerup * d + tinlayerdown * e
+    else:
+        power=0
+    energy_demand = power * production_time / 60                                                       # KWh
+    energy_cost= energy_demand * price_energy_consumption
+    
+    return energy_cost
+
+#this function obtains a value that is goint to multiply the "expected profit" in each coil, to reduce the profit in the case
+#that the coil does not meet the rules of the plant.
+def va_rules(coil_msgs_df, va_data_df,i, winner_df):
+    to= va_data_df.loc[0,'id'].split('@')[0]
+    accept=1
+    #coil_msgs_df.loc[i,'plant_rule']= accept
+    if to == 'va08':
+        if len(winner_df)>0:
+            if abs((winner_df.iloc[-1]['initial_thickness']-coil_msgs_df.loc[i,'espesor'])) > 0.1:
+                accept = accept*0.2
+    elif to == 'va09':
+        if abs((coil_msgs_df.loc[i,'ancho'] - va_data_df.loc[0,'coil_width'])) > 120:                                               
+            accept = accept*0.2
+        if coil_msgs_df.loc[i,'oel_sorte'] == 8:                                                                                    
+            accept = accept*0.1
+
+        if len(winner_df)>0:
+            if abs((winner_df.iloc[-1]['initial_thickness']-coil_msgs_df.loc[i,'espesor'])) > 0.1:
+                print(".............................espesor ganadora...................")
+                print(winner_df.iloc[-1]['initial_thickness'])
+                accept = accept*0.3
+            if coil_msgs_df.loc[i,'single_reduction'] == 0:                                                                         
+                
+                if abs((winner_df.iloc[-1]['initial_thickness']-coil_msgs_df.loc[i,'espesor'])) > winner_df.iloc[-1]['initial_thickness']*0.04:       
+                    accept = accept*0.4 
+    elif to == 'va10':
+        print("the oel sorte is...........",coil_msgs_df.loc[i,'oel_sorte'])
+        if len(winner_df)>0:
+            if winner_df.iloc[-1]['oel_sorte'] < coil_msgs_df.loc[i,'oel_sorte']:
+                accept = accept*0.2
+            else:
+                if abs((winner_df.iloc[-1]['initial_thickness']-coil_msgs_df.loc[i,'espesor'])) > 0.05:
+                    accept = accept*0.2
+    elif to == 'va11':
+        if len(winner_df)>0:
+            if abs((winner_df.iloc[-1]['initial_thickness']-coil_msgs_df.loc[i,'espesor'])) > 0.1:
+                    accept = accept*0.2
+    elif to == 'va12':
+        if coil_msgs_df.loc[i,'assivieru_ngkz'] != 555:
+            accept = accept*0.2
+        else:
+            if len(winner_df)>0:
+                if abs((winner_df.iloc[-1]['initial_thickness']-coil_msgs_df.loc[i,'espesor'])) > 0.1:
+                    accept = accept*0.2
+    
+    return accept
 
 
-def va_bid_evaluation(coil_msgs_df, va_data_df, step):
+def va_bid_evaluation(coil_msgs_df, va_data_df, step, price_energy_consumption, df_parameters_energy, winner_df):
     key = []
-    transport_cost_df = transport_cost(va_data_df.loc[0,'id'].split('@')[0])
+    From_location = coil_msgs_df.loc[0,'From']
+    transport_cost_df = transport_cost(va_data_df.loc[0,'id'].split('@')[0], From_location)
     for i in range(transport_cost_df.shape[0]):
         m = transport_cost_df.loc[i, 'CrossTransport']
         n = transport_cost_df.loc[i, 'Supply']
         key.append(n+m)
+
     transport_cost_df['transport_cost'] = key
     transport_cost_df = transport_cost_df.loc[:, ['From', 'To', 'transport_cost']]
     for i in range(coil_msgs_df.shape[0]):
         coil_msgs_df.at[i, 'production_cost'] = production_cost(va_data_df, coil_msgs_df, i)
-    #
+        coil_msgs_df.at[i, 'energy_cost'] = energy_cost(df_parameters_energy, va_data_df, price_energy_consumption, winner_df, coil_msgs_df,i)
+        coil_msgs_df.at[i, 'plant_rule'] = va_rules(coil_msgs_df, va_data_df, i, winner_df)
     coil_msgs_df = coil_msgs_df.merge(transport_cost_df, on='From', sort=False)
+    
     for i in range(coil_msgs_df.shape[0]):
         m = coil_msgs_df.loc[i, 'production_cost']
         n = coil_msgs_df.loc[i, 'transport_cost']
-        coil_msgs_df.loc[i, 'minimum_price'] = m + n
+        energy = coil_msgs_df.loc[i, 'energy_cost']
+        coil_msgs_df.loc[i, 'minimum_price'] = m + n + energy
+        print("El minimum price es:", coil_msgs_df.loc[i, 'minimum_price'])
     for i in range(coil_msgs_df.shape[0]):
         m = coil_msgs_df.loc[i, 'minimum_price']
         if step == 'counterbid':
             n = coil_msgs_df.loc[i, 'counterbid']
-            coil_msgs_df.loc[i, 'profit'] = n - m
+            coil_msgs_df.loc[i, 'profit'] = (n - m)* coil_msgs_df.loc[i, 'plant_rule']
         n = coil_msgs_df.loc[i, 'bid']
-        coil_msgs_df.loc[i, 'difference'] = m - n
+        coil_msgs_df.loc[i, 'difference'] = (m - n) * coil_msgs_df.loc[i, 'plant_rule']
+        print("El difference es:", coil_msgs_df.loc[i, 'difference'])
+
     if step == 'bid':
         results = coil_msgs_df[['agent_type', 'id', 'coil_jid', 'bid', \
                             'minimum_price','difference', 'ancho', 'largo',\
                             'espesor', 'ship_date','budget_remaining']]
-        results = results.sort_values(by=['difference'])
+        
+        results = results.sort_values(by=['difference'], ascending = True)             #s
     else: # 'counterbid'
         results = coil_msgs_df[['agent_type', 'id', 'coil_jid', 'bid', \
                             'minimum_price', 'ancho', 'largo','difference',\
                             'espesor', 'ship_date','budget_remaining',\
-                            'counterbid','profit','User_name_va']]
+                            'counterbid','profit','User_name_va','plant_rule', 'oel_sorte']]
         results = results.sort_values(by=['profit'], ascending = False)
     #
     results = results.reset_index(drop=True)
     value = []
     for i in range(results.shape[0]):
         value.append(i+1)
-    results.insert(loc=0, column='position', value=value)
+    results.insert(loc=0, column='position', value=value)      
     return results
 
 def va_result(coil_ofertas_df, jid_list,step):
@@ -1260,9 +1377,13 @@ def va_result(coil_ofertas_df, jid_list,step):
         df.at[i, 'Bid'] = coil_ofertas_df.loc[i, 'bid']
         df.at[i, 'Difference'] = coil_ofertas_df.loc[i, 'difference']
         df.at[i, 'Budget_remaining'] = coil_ofertas_df.loc[i, 'budget_remaining']
+
         if step == 'counterbid' :
             df.at[i, 'Counterbid'] = coil_ofertas_df.loc[i, 'counterbid']
             df.at[i, 'Profit'] = coil_ofertas_df.loc[i, 'profit']
+            df.at[i, 'initial_thickness'] = coil_ofertas_df.loc[i, 'espesor']
+            df.at[i, 'plant_rule'] = coil_ofertas_df.loc[i, 'plant_rule']
+            df.at[i, 'oel_sorte'] = coil_ofertas_df.loc[i, 'oel_sorte']
     return df
 
 def auction_bid_evaluation(coil_msgs_df, agent_df):
@@ -1441,7 +1562,8 @@ def ca_negotiate(evaluation_df, coil_msgs_df):
     df = pd.DataFrame()
     for i in negotiate_list:
         df0 = coil_msgs_df.loc[coil_msgs_df['id'] == i]
-        df = df.append(df0)
+        #df = df.append(df0)
+        df = pd.concat([df,df0],axis=0,ignore_index=True)
         df = df.reset_index(drop=True)
     return df
 
@@ -1625,18 +1747,21 @@ def get_agent_location(agent_full_name):
 def set_process_df(df, ca_counter_bid_df, ca_to_tr_df):
     """Adds new line to process_df with new parameters"""
     if pd.isnull(df['fab_start'].iloc[-1]):
-        new_line_df = pd.Series([np.nan, np.nan, np.nan, np.nan, np.nan, \
-                    0.25, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan],\
-                    index=['fab_start', 'processing_time', 'start_auction_before', \
-                           'start_next_auction_at', 'fab_end', 'setup_speed', \
-                           'T1', 'T2', 'T3', 'T4', 'T5', 'q'])
-        process_df = df.append(new_line_df, ignore_index=True)
+        new_line_df = pd.DataFrame([[np.nan, np.nan, np.nan, np.nan, np.nan, \
+                                     0.25, np.nan, np.nan, np.nan, np.nan, \
+                                     np.nan, np.nan]],
+                                   columns=['fab_start', 'processing_time', 'start_auction_before', \
+                                            'start_next_auction_at', 'fab_end', 'setup_speed', \
+                                            'T1', 'T2', 'T3', 'T4', 'T5', 'q'])
+        process_df = pd.concat([df, new_line_df], ignore_index=True)
         process_df = process_df.reset_index(drop=True)
         processing_time = (1/ca_counter_bid_df.loc[0, 'setup_speed']) * \
                           ca_counter_bid_df.loc[0, 'largo']
+        
         process_df['start_auction_before'].iloc[-1] = 6.5 * 60
         start_auction_before = process_df['start_auction_before'].iloc[-1]
         process_df['processing_time'].iloc[-1] = processing_time
+
         # process_df['fab_start'].iloc[-1] = (ca_to_tr_df.loc[0, 'slot_1_end'] - \
         #                   datetime.timedelta(minutes=2.5))
         process_df['fab_start'].iloc[-1] = datetime.datetime.now() + \
@@ -1655,6 +1780,7 @@ def set_process_df(df, ca_counter_bid_df, ca_to_tr_df):
         process_df['fab_start'].iloc[-1] = process_df['fab_end'].iloc[-2]
         a = process_df['fab_start']
         process_df['fab_start'] = pd.to_datetime(process_df['fab_start'])
+        print("pruebas..........................",process_df['fab_end'].iloc[-1])
         process_df['fab_end'].iloc[-1] = process_df['fab_start'].iloc[-1] + \
                           datetime.timedelta(seconds=processing_time)
         process_df['start_auction_before'].iloc[-1] = process_df[\
@@ -1670,6 +1796,11 @@ def set_process_df(df, ca_counter_bid_df, ca_to_tr_df):
     # process_df['T5'].iloc[-1] = ca_counter_bid_df.loc[0, 'T5']
     # process_df['q'].iloc[-1] = ca_counter_bid_df.loc[0, 'q']
     process_df['setup_speed'].iloc[-1] = ca_counter_bid_df.loc[0, 'setup_speed']
+    ################################### sergio
+    process_df.loc[0,'processing_time'] = processing_time
+    process_df.loc[0,'setup_speed'] = ca_counter_bid_df.loc[0, 'setup_speed']
+    #print(process_df.loc[0,'processing_time'])
+    #print(process_df.loc[0,'setup_speed'])
     return process_df
 
 
@@ -1715,7 +1846,8 @@ def append_bid(bid, bid_register_df, agent_name, agent_full_name, ca_agent_df, b
     df.at[0, 'auction_owner'] = ca_agent_full_name
     if bid_level == 'initial':
         df.at[0, 'initial_bid'] = bid
-        bid_register_df = bid_register_df.append(df)
+        #bid_register_df = bid_register_df.append(df)
+        bid_register_df = pd.concat([bid_register_df,df],axis=0,ignore_index=True)
         bid_register_df = bid_register_df.reset_index(drop=True)
     elif bid_level == 'extrabid':
         idx = bid_register_df.index[bid_register_df['auction_owner'] == ca_agent_full_name]
@@ -1920,12 +2052,17 @@ def change_warehouse(launcher_df, clist, dact):
     wtt = launcher_df.loc[0, 'wait_time']
     bdg = launcher_df.loc[0, 'each_coil_price']
     odn = launcher_df.loc[0, 'order_code']
-    pth = launcher_df.loc[0, 'string_operations']
+    pth = re.escape(launcher_df.loc[0, 'string_operations'])
     sgd = launcher_df.loc[0, 'steel_grade']
     thk = launcher_df.loc[0, 'thickness_coils']
     ach = launcher_df.loc[0, 'width_coils']
     sdt = launcher_df.loc[0, 'ship_date']
     parF= launcher_df.loc[0, 'param_f']
+    artikel_gruppe = launcher_df.loc[0, 'artikel_gruppe']
+    oel_sorte = launcher_df.loc[0, 'oel_sorte']
+    single_reduction = launcher_df.loc[0, 'single_reduction']
+    assivieru_ngkz = launcher_df.loc[0, 'assivieru_ngkz']
+    arkerung_mes = launcher_df.loc[0, 'arkerung_mes']
     #
     j = 0
     my_dir = os.getcwd()
@@ -1937,7 +2074,9 @@ def change_warehouse(launcher_df, clist, dact):
         for k in dact['id'].to_list():
             ik = k[1:].split('@')[0]
             cnm= dact.loc[dact['id']==k,'code'].to_list()[0]
-            if ik.isnumeric() and len(cnm) > 0:
+            #if ik.isnumeric() and len(cnm) > 0:
+            if ik.isnumeric() and (isinstance(cnm, str) or (isinstance(cnm, int) and len(str(cnm)) > 0)):
+
                 lik.append(int(ik))
     #
     lres = []
@@ -1968,6 +2107,11 @@ def change_warehouse(launcher_df, clist, dact):
             oshl = oshl+" -ah " + str(int(ach)) + " -sg " + sgd
             oshl = oshl+" -thk " + str(float(thk)) + " -ll " + str(int(lz))
             oshl = oshl+" -sd " + sdt + " -F " + str(parF)
+            oshl = oshl+" -ag " + str(int(artikel_gruppe))
+            oshl = oshl+" -os " + str(int(oel_sorte))
+            oshl = oshl+" -sr " + str(int(single_reduction))
+            oshl = oshl+" -asn " + str(int(assivieru_ngkz))
+            oshl = oshl+" -ark " + str(int(arkerung_mes))
             oshl = oshl+" -bag "+globals.gbrw_jid+" -lag "+ globals.glog_jid
             oshl = oshl+" -u c"+"{0:0>3}".format(nid)+"@"
             oshl = oshl+globals.glog_jid.split('@')[1] + " -p " 
@@ -1978,13 +2122,18 @@ def change_warehouse(launcher_df, clist, dact):
             lres.append({'id':id,'code':z,'loc':pz,'bdg':bdg,'orden':odn,\
                          'ph':pth,'ancho':str(int(ach)),'sg':sgd,\
                          'espesor':str(float(thk)),'largo':str(int(lz)),\
-                         'parF':str(parF),'sdate':sdt,'st':'ini'})
+                         'parF':str(parF), 'artikel_gruppe': str(artikel_gruppe),\
+                         'oel_sorte':str(oel_sorte), 'single_reduction': str(single_reduction),\
+                         'assivieru_ngkz':str(assivieru_ngkz), 'arkerung_mes':str(arkerung_mes),'sdate':sdt,'st':'ini'})
         else:
             id = df.iloc[0]['id']
             lres.append({'id':id,'code':z,'loc':pz,'bdg':bdg,'orden':odn,\
                          'ph':pth,'ancho':str(int(ach)),'sg':sgd,\
                          'espesor':str(float(thk)),'largo':str(int(lz)),\
-                         'parF':str(parF),'sdate':sdt,'ph':pth,'st':'chg'})
+                         'parF':str(parF), 'artikel_gruppe':str(artikel_gruppe),\
+                         'oel_sorte':str(oel_sorte), 'single_reduction': str(single_reduction),\
+                         'assivieru_ngkz':str(assivieru_ngkz), 'arkerung_mes':str(arkerung_mes),\
+                         'sdate':sdt,'ph':pth,'st':'chg'})
         time.sleep(1)
     return(pd.DataFrame(lres))
 
@@ -2004,7 +2153,8 @@ def loc_of_coil(coil_df):
 
 def set_agent_parameters_coil(my_dir, my_name, my_full_name, \
                               ancho,esp,largo,sgrd,location, code,\
-                              param_f, path, sdate):
+                              param_f, artikel_gruppe, oel_sorte,\
+                              single_reduction, assivieru_ngkz, arkerung_mes, path, sdate):
     df = pd.DataFrame([],columns=['id','mydir','agent','name','From',\
                                   'oname','budget','ancho','espesor',\
                                   'largo','sgrade','path','ship_date'])
@@ -2023,6 +2173,11 @@ def set_agent_parameters_coil(my_dir, my_name, my_full_name, \
     df.at[0,'sgrade']= sgrd
     df.at[0,'path']  = path
     df.at[0,'param_f']= param_f
+    df.at[0,'artikel_gruppe']= artikel_gruppe
+    df.at[0,'oel_sorte']= oel_sorte
+    df.at[0,'single_reduction']= single_reduction
+    df.at[0,'assivieru_ngkz']= assivieru_ngkz
+    df.at[0,'arkerung_mes']= arkerung_mes
     df.at[0,'ship_date'] = sdate
     return(df)
 
@@ -2052,6 +2207,24 @@ def bids_mean(medias_list):
     return medias_list
 
 def send_va(my_full_name, number, bid_mean, auction_level, jid_list):
+    df = pd.DataFrame()
+    df.loc[0, 'id'] = my_full_name
+    df.loc[0, 'purpose'] = 'inform'
+    df.loc[0, 'request_type'] = 'auction'
+    if auction_level == 1:
+        df.loc[0, 'msg'] = 'send pre-auction'
+    elif auction_level == 2:
+        df.loc[0, 'msg'] = 'send auction'
+    elif auction_level == 3:
+        df.loc[0, 'msg'] = 'send acceptance'
+    df.loc[0, 'number'] = number
+    df.loc[0, 'bid_mean'] = bid_mean
+    df.loc[0, 'to'] = json.dumps(jid_list)
+    df.loc[0, 'IP'] = globals.IP
+    return df
+
+
+def send_va_2(my_full_name, number, bid_mean, auction_level, ):
     df = pd.DataFrame()
     df.loc[0, 'id'] = my_full_name
     df.loc[0, 'purpose'] = 'inform'

@@ -21,16 +21,16 @@ class VA(Agent):
                    coil_msgs_df, medias_list, ip_machine, seq_va, number, \
                    list_stg_coils, va_msg_log, pre_auction_start, pending_au, \
                    coil_msgs_df2,coil_msgs_df3,post_auction_step, coil_notified, \
-                   rep_pauction, all_auctions
+                   rep_pauction, all_auctions, price_energy_consumption, df_parameters_energy, winner_df, all_winner_df,winner_df_aux,i
+            #
             #
             if va_status_var == "pre-auction":
                 diff=(datetime.datetime.now()-pre_auction_start).total_seconds()
-                # print(' Preauction: ' + str(self.act_qry('ask-coils','pre-auction')) +\
-                #                             ' Sncds:'+ str(diff))
                 rep_pauction = 0 # Tolerance of 5 to repetition in auctions.
                 if self.act_qry('ask-coils','pre-auction') == 0 and diff > 25:
                     seq_va = seq_va + 1
                     auction_df.at[0, 'pre_auction_start'] = pre_auction_start
+                    #print("hemos entrado al pre-auction")                                              #ENTRA AL PREACUTION
                     """Asks browser for active coils and locations"""
                     pre_auction_start = datetime.datetime.now()
                     [id_org,cl_agent] = await self.ask_coils()
@@ -47,22 +47,29 @@ class VA(Agent):
                     # print('Preuaction msg:' + msg_ag.body)
                     # print(globals.ret_dact)
                     if 'BROW' in str(msg_ag.sender).upper():
+                        #print("brow")
                         cl_df = pd.read_json(msg_ag.body)
                         seqce = cl_df.loc[0,'seq']
                         [act,st] = self.ret_agnt(seqce)
                         if st == 'pre-auction' and act == 'ask-coils':
+                            print("brow pre auction")                               
                             dact  = pd.read_json(cl_df.loc[0,'msg'])
+                            print("Soy dact",dact)
                             glist = self.del_agnt(seqce,globals.tosend)
+                            print("soy glist",glist)
                             globals.tosend = glist
                             br_data_df = []
                             myfnam = (my_full_name.split('@')[0]).upper()
+                            print("myfnam",myfnam)
                             for k in dact.index:
                                 res = re.match(dact.loc[k,'ph'],myfnam)
+                                print("res",res)
                                 if res:
                                     if res.group(0) == myfnam:
                                         br_data_df.append(dact.loc[k,'id'])
                             #
                             if len(br_data_df) > 0: # There are coils waiting ...
+                                print("hay coils esperando")
                                 auction_df.at[0, 'active_coils'] = br_data_df
                                 #
                                 # initial auction level
@@ -100,27 +107,24 @@ class VA(Agent):
                                     globals.tosend.append({'idorg':id_org,'agnt_org': \
                                             globals.gva_jid,'act':'invitation',\
                                             'agnt_dst':z,'dt':curr,'st':'pre-auction'})
-                                # print(' From BR: ')
-                                # print(globals.tosend)
                     elif recl is not None: # Means we have a coil answer ...
-                        # print('Message from coil ...')
-                        # print(globals.tosend)
-                        # print('=======')
+                        print("hay respuesta de las coil")
                         coil_jid = str(msg_ag.sender)
                         msg_snd_jid = coil_jid.split('/')[0]
                         cl_df = pd.read_json(msg_ag.body)
                         if cl_df.loc[0,'purpose'] == 'answer2invitation':
+                            print("respuesta a la invitación")
                             seqce = cl_df.loc[0,'seq']
                             coil_msg_df = pd.read_json(cl_df.loc[0,'msg'])
                             coil_msg_df.at[0,'coil_jid'] = msg_snd_jid
-                            coil_msgs_df = coil_msgs_df.append(coil_msg_df)  # received msgs
+                            #coil_msgs_df = coil_msgs_df.append(coil_msg_df)  # received msgs
+                            coil_msgs_df = pd.concat([coil_msgs_df,coil_msg_df], \
+                                       axis=0,ignore_index=True)  # received msgs
+                            print("cambio 1",coil_msgs_df)
                             coil_msgs_df.reset_index(drop=True,inplace=True)
                             glist = self.del_agnt(seqce,globals.tosend)
                             globals.tosend = glist
                             [mindt,ref] = self.min_dt('invitation','pre-auction')
-                            #
-                            # print(' Remaining: ' + str(self.act_qry('invitation','pre-auction')))
-                            # print(globals.tosend)
                             if self.act_qry('invitation','pre-auction') == 0 or \
                                     (ref-mindt).total_seconds() > 15:
                                 # Time for resolving the pre-auction
@@ -129,8 +133,7 @@ class VA(Agent):
                                     datetime.timedelta(seconds=70)
                                 auction_df.at[0, 'auction_start'] = None
                                 coil_msgs_df2 = pd.DataFrame() # Preparing the auction
-                                # print(' Pasamos a AUCTION')
-                                # print(' .................')
+
                         else:
                             """Inform log """
                             msgerr = cl_df.loc[0,'purpose']
@@ -142,8 +145,8 @@ class VA(Agent):
                             va_msg_log = asf.msg_to_log(va_df.to_json(\
                                      orient="records"), my_dir)
                             await self.send(va_msg_log)
-                            # print(' Unexpected: ' + cl_df.loc[0,'purpose'])
                     elif 'LAUN' in str(msg_ag.sender).upper():
+                        print("mensaje del launcher")
                         # Message from Launcher requesting parameter update ...
                         msgl = pd.read_json(msg_ag.body)
                         msg_sender_jid = str(msg_ag.sender).split('/')[0]
@@ -156,14 +159,34 @@ class VA(Agent):
                                          msg_sender_jid,'history',id_ag)
                             cnt_lst = asf.contact_list_json(cl_ag,msg_sender_jid)
                             await self.send(cnt_lst)
-                #
-                # else:
-                #     print(' What is this?')
-                #     print('Preauction and not message to read')
-                #     print(self.act_qry('ask-coils','pre-auction'))
-                #     print(' Diff:' + str(diff))
-                #     print('===***===')
+                        elif msgl.loc[0,'purpose'] == 'status_va':
+                            #
+                            # Answering current properties to browser.
+                            st = pd.DataFrame([{\
+                                 'Code':va_data_df.loc[0,'id'],\
+                                 'From':va_data_df.loc[0,'oname'],\
+                                 'msg': va_data_df.loc[0,'name'], \
+                                 'Location': va_data_df.loc[0,'From'],
+                                 'Capacity': va_data_df.loc[0,'budget'], \
+                                 'purpose':'report', \
+                                 'ancho':va_data_df.loc[0,'ancho'],\
+                                 'espesor': va_data_df.loc[0,'espesor'],\
+                                 'largo': va_data_df.loc[0,'largo'],\
+                                 'parF': va_data_df.loc[0,'param_f'],\
+                                 'artikel_gruppe': va_data_df.loc[0,'artikel_gruppe'],\
+                                 'oel_sorte': va_data_df.loc[0,'oel_sorte'],\
+                                 'assivieru_ngkz': va_data_df.loc[0,'assivieru_ngkz'],\
+                                 'arkerung_mes': va_data_df.loc[0,'arkerung_mes'],\
+                                 'sdate': va_data_df.loc[0,'ship_date'],\
+                                 'status': va_status_var, \
+                                 'parF': va_data_df.loc[0,'param_f'],\
+                                 'sgrade': va_data_df.loc[0,'sgrade']}]).to_json(\
+                                            orient="records")
+                            rep= asf.msg_to_agnt(st,msgl.loc[0,'id'])
+                            await self.send(rep)
+
             if va_status_var == "auction":
+                #print("hemos entrado al auction")                                                   #no llega al auction
                 diff=(datetime.datetime.now()-auction_start).total_seconds()
                 # print(' Auction: ' + str(self.act_qry('counterbid','auction')) +\
                 #                             ' Sncds:'+ str(diff))
@@ -191,7 +214,7 @@ class VA(Agent):
                                 ].to_list())]
                     jid_list = coil_msgs_df['id'].to_list()
                     if len(jid_list) > 0:
-                        bid_coil = asf.va_bid_evaluation(coil_msgs_df, va_data_df,'bid')
+                        bid_coil = asf.va_bid_evaluation(coil_msgs_df, va_data_df,'bid',price_energy_consumption,df_parameters_energy, winner_df_aux)
                         bid_coil['bid_status'] = 'counterbid'
                         jid_list = bid_coil.loc[:, 'coil_jid'].tolist()
                         result = asf.va_result(bid_coil, jid_list,'bid')
@@ -206,22 +229,15 @@ class VA(Agent):
                         globals.tosend.append({'idorg':id_org,'agnt_org': \
                                 globals.gva_jid,'act':'counterbid',\
                                 'agnt_dst':z,'dt':curr,'st':'auction'})
-                    # print(' Auction ask-counterbid')
-                    # print(globals.tosend)
                 #
                 """ Process the messages """
                 msg_ag = await self.receive(timeout=wait_msg_time)
                 if msg_ag:
                     cl_df = pd.read_json(msg_ag.body)
                     lstids= [i['idorg'] for i in globals.tosend]
-                    # print('\n***\n   Auction MSG:' + msg_ag.body)
-                    # print(str(cl_df.loc[0,'seq']) + ' in '+' '.join(str(e) for e in lstids) + ' ? ')
                     recl = re.match(r'^c\d+',str(msg_ag.sender).split('@')[0]) # Message from coils
                     if recl is not None and cl_df.loc[0,'seq'] in lstids: # Message from coil agents
-                        #
-                        # print(msg_ag.body)
-                        # print(globals.tosend)
-                        # print(' -------------\n')
+
                         coil_jid = str(msg_ag.sender)
                         msg_snd_jid = coil_jid.split('/')[0]
                         cl_df = pd.read_json(msg_ag.body)
@@ -229,7 +245,9 @@ class VA(Agent):
                             seqce = cl_df.loc[0,'seq']
                             coil_msg_df2 = pd.read_json(cl_df.loc[0,'msg'])
                             coil_msg_df2.at[0,'coil_jid'] = msg_snd_jid
-                            coil_msgs_df2 = coil_msgs_df2.append(coil_msg_df2)
+                            #coil_msgs_df2 = coil_msgs_df2.append(coil_msg_df2)
+                            coil_msgs_df2 = pd.concat([coil_msgs_df2,coil_msg_df2\
+                                       ], axis=0, ignore_index=True)
                             coil_msgs_df2.reset_index(drop=True,inplace=True)
                             glist = self.del_agnt(seqce,globals.tosend)
                             globals.tosend = glist
@@ -243,10 +261,15 @@ class VA(Agent):
                                     pending_au    = True
                                     post_auction_step = datetime.datetime.now() - \
                                         datetime.timedelta(seconds=70)
+                                    #print("He llegado a antes de la evaluación de ofertas, estoy en va")
                                     counterbid_coil = asf.va_bid_evaluation(coil_msgs_df2, \
-                                                va_data_df,'counterbid')
+                                                va_data_df,'counterbid',price_energy_consumption,df_parameters_energy, winner_df_aux)
                                     """Inform coil of assignation and agree on assignation"""
+                                    #print("..................counterbid_coil")
+                                    #print(counterbid_coil)
                                     jid_list_2= counterbid_coil.loc[:,'coil_jid'].tolist()
+                                    #print("jid_list_2")
+                                    #print(jid_list_2)
                                     results_2 = asf.va_result(counterbid_coil, \
                                                 jid_list_2,'counterbid')
                                     coil_notified = -1 # Not yet communicated
@@ -278,12 +301,34 @@ class VA(Agent):
                                          msg_sender_jid,'history',id_ag)
                             cnt_lst = asf.contact_list_json(cl_ag,msg_sender_jid)
                             await self.send(cnt_lst)
+                        elif msgl.loc[0,'purpose'] == 'status_va':
+                            #
+                            # Answering current properties to browser.
+                            st = pd.DataFrame([{\
+                                 'Code':va_data_df.loc[0,'id'],\
+                                 'From':va_data_df.loc[0,'oname'],\
+                                 'msg': va_data_df.loc[0,'name'], \
+                                 'Location': va_data_df.loc[0,'From'],
+                                 'Capacity': va_data_df.loc[0,'budget'], \
+                                 'purpose':'report', \
+                                 'ancho':va_data_df.loc[0,'ancho'],\
+                                 'espesor': va_data_df.loc[0,'espesor'],\
+                                 'largo': va_data_df.loc[0,'largo'],\
+                                 'parF': va_data_df.loc[0,'param_f'],\
+                                 'artikel_gruppe': va_data_df.loc[0,'artikel_gruppe'],\
+                                 'oel_sorte': va_data_df.loc[0,'oel_sorte'],\
+                                 'assivieru_ngkz': va_data_df.loc[0,'assivieru_ngkz'],\
+                                 'arkerung_mes': va_data_df.loc[0,'arkerung_mes'],\
+                                 'sdate': va_data_df.loc[0,'ship_date'],\
+                                 'status': va_status_var, \
+                                 'parF': va_data_df.loc[0,'param_f'],\
+                                 'sgrade': va_data_df.loc[0,'sgrade']}]).to_json(\
+                                            orient="records")
+                            rep= asf.msg_to_agnt(st,msgl.loc[0,'id'])
+                            await self.send(rep)
             #
             if va_status_var == "post-auction":
                 diff=(datetime.datetime.now()-post_auction_step).total_seconds()
-                # print(' Post-Auction: ' + str(coil_msgs_df2.shape[0]) +\
-                #                             ' Sncds:'+ str(diff))
-                # print(globals.tosend)
                 if coil_notified < (coil_msgs_df2.shape[0]-1) and pending_au and \
                                 coil_msgs_df2.shape[0] > 0  and diff > 25 :
                     coil_notified    = coil_notified + 1
@@ -291,13 +336,21 @@ class VA(Agent):
                     """Evaluate extra bids and give a rating"""
                     va_data_df.loc[0, 'auction_level'] = 3  # third level
                     coil_jid_winner_f= results_2.loc[i,'Coil']
+                    print("Soy coil jid winner", coil_jid_winner_f)
                     coil_jid_winner  = coil_jid_winner_f.split('@')[0]
                     winner_df = results_2.loc[i:i,:]
                     winner_df = winner_df.reset_index(drop=True)
+                    winner_df_aux = winner_df
+                    winner_df_aux.loc[0,'final_thickness'] = va_data_df.loc[0,'coil_thickness']
+
+                    all_winner_df = pd.concat([all_winner_df,winner_df_aux])              #s
+                    all_winner_df = all_winner_df.reset_index(drop=True)
+
+                    print("......................AUCTION WINNERS........................")
+                    print(all_winner_df)                                           #all auctions does not have the info of the bids
                     profit    = float(results_2.loc[i, 'Profit'])
                     post_auction_step= datetime.datetime.now()   # Reset to follow up
-                    # print(' coil_notif:' + str(coil_notified))
-                    #
+
                     if profit >= 0.1:
                         winner_df.at[0, 'bid_status'] = 'acceptedbid'
                         va_data_df.at[0,'bid_status'] = 'acceptedbid'
@@ -323,9 +376,6 @@ class VA(Agent):
                                     'agnt_dst':coil_jid_winner,'dt':curr,\
                                     'st':'post-auction'})
                         pending_au = False
-                        # print(" Confirming:")
-                        # print(cl_agent)
-                        # print(globals.tosend)
                     else:
                         """inform log of issue"""
                         va_msg_log_body = f'coil {coil_jid_winner_f} does not bring '
@@ -339,10 +389,8 @@ class VA(Agent):
                                     coil_jid_winner_f,'notprofit',id_org)
                         cl_ans  = asf.contact_list_json(cl_agent,coil_jid_winner_f)
                         await self.send(cl_ans)
-                        # print('not profit => '+ cl_ans.body)
                 elif coil_notified == coil_msgs_df2.shape[0]-1:
                     """ Post auction ended """
-                    # print('C_Notified: '+ str(coil_notified))
                     auction_df.at[0, 'number_auction_completed'] = auction_df.at[\
                                     0, 'number_auction_completed'] + 1
                     va_status_var = "stand-by"
@@ -354,6 +402,7 @@ class VA(Agent):
                     pending_au = True
                     all_auctions = pd.concat([all_auctions, process_df],\
                                         ignore_index=True)
+
                     process_df = pd.DataFrame([], columns=['fab_start', \
                                 'processing_time', 'start_auction_before', \
                                 'start_next_auction_at','setup_speed', \
@@ -365,8 +414,6 @@ class VA(Agent):
                 #
                 msg_ag = await self.receive(timeout=wait_msg_time)
                 if msg_ag:
-                    # print( 'Post-auction MSG:' + msg_ag.body)
-                    # print(globals.tosend)
                     recl = re.match(r'^c\d+',str(msg_ag.sender)) # Message from coils
                     if recl is not None: # Message from coil agents
                         coil_jid = str(msg_ag.sender)
@@ -382,7 +429,12 @@ class VA(Agent):
                                     orient="records")]  # Save information to auction df
                             """Calculate processing time"""
                             coil_msg_df3.loc[0,'setup_speed'] = speed
+                            #pdb.set_trace()
                             process_df = asf.set_process_df(process_df, coil_msg_df3, cl_df)
+                            va_data_df.loc[0,'processing_time'] = process_df.loc[0,'processing_time']           #sergio 03/04
+                            va_data_df.loc[0,'setup_speed'] = process_df.loc[0,'setup_speed']
+                            #print(process_df.loc[0,'processing_time'])
+                            
                             """Inform log of assignation and auction KPIs"""
                             counterbid_win = coil_msg_df3.loc[0,'counterbid']
                             medias_list.append(float(counterbid_win))
@@ -393,7 +445,11 @@ class VA(Agent):
                                         auction_df, process_df, winner_df)
                             va_msg_log = asf.msg_to_log(va_msg_log_body.to_json(\
                                         orient="records"), my_dir)
+                            va_msg_ganadores_log = asf.msg_to_log(all_winner_df.to_json(\
+                                        orient="records"), my_dir)
+
                             await self.send(va_msg_log)
+                            await self.send(va_msg_ganadores_log)
                             pft     = winner_df.loc[0,'Profit']
                             dtw     = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                             idord   = coil_msg_df3.loc[0,'id']
@@ -436,7 +492,7 @@ class VA(Agent):
                         #
                         elif cl_df.loc[0, 'purpose'] == 'NOTacceptedbid':
                             msg_str = f'{my_full_name} rejected the auction'
-                            msg_str = msg_str + f' number: {number_auction}'
+                            msg_str = msg_str + f' number: {number}'
                             cl_msg_lbdy = asf.inform_log(my_full_name,\
                                                 msg_str,globals.glog_jid)
                             cl_msg_lg_bd = cl_msg_lbdy.to_json(orient="records")
@@ -451,8 +507,6 @@ class VA(Agent):
                                 rep_pauction = 0
                         glist = self.del_agnt(seqce,globals.tosend)
                         globals.tosend = glist
-                        # print(' ** Err2: '+ str(len(globals.tosend)))
-                        # print(globals.tosend)
                     elif 'LAUN' in str(msg_ag.sender).upper():
                         # Message from Launcher requesting parameter update ...
                         msgl = pd.read_json(msg_ag.body)
@@ -464,6 +518,44 @@ class VA(Agent):
                             #
                             id_ag = msgl.loc[0,'seq']
                             cl_ag = asf.rq_list(my_full_name, all_auctions, \
+                                         msg_sender_jid,'history',id_ag)
+                            cnt_lst = asf.contact_list_json(cl_ag,msg_sender_jid)
+                            await self.send(cnt_lst)
+                        elif msgl.loc[0,'purpose'] == 'status_va':
+                            #
+                            # Answering current properties to browser.
+                            st = pd.DataFrame([{\
+                                 'Code':va_data_df.loc[0,'id'],\
+                                 'From':va_data_df.loc[0,'oname'],\
+                                 'msg': va_data_df.loc[0,'name'], \
+                                 'Location': va_data_df.loc[0,'From'],
+                                 'Capacity': va_data_df.loc[0,'budget'], \
+                                 'purpose':'report', \
+                                 'ancho':va_data_df.loc[0,'ancho'],\
+                                 'espesor': va_data_df.loc[0,'espesor'],\
+                                 'largo': va_data_df.loc[0,'largo'],\
+                                 'parF': va_data_df.loc[0,'param_f'],\
+                                 'artikel_gruppe': va_data_df.loc[0,'artikel_gruppe'],\
+                                 'oel_sorte': va_data_df.loc[0,'oel_sorte'],\
+                                 'assivieru_ngkz': va_data_df.loc[0,'assivieru_ngkz'],\
+                                 'arkerung_mes': va_data_df.loc[0,'arkerung_mes'],\
+                                 'sdate': va_data_df.loc[0,'ship_date'],\
+                                 'status': va_status_var, \
+                                 'parF': va_data_df.loc[0,'param_f'],\
+                                 'sgrade': va_data_df.loc[0,'sgrade']}]).to_json(\
+                                            orient="records")
+                            rep= asf.msg_to_agnt(st,msgl.loc[0,'id'])
+                            await self.send(rep)
+                        elif msgl.loc[0,'purpose'] == 'searchst':
+                            #
+                            id_ag = msgl.loc[0,'seq']
+                            if va_status_var == 'pre-auction':
+                                dff = coil_msgs_df
+                            if va_status_var == 'auction':
+                                dff = coil_msgs_df2
+                            if va_status_var == 'post-auction':
+                                dff = coil_msgs_df3
+                            cl_ag = asf.rq_list(my_full_name, dff, \
                                          msg_sender_jid,'history',id_ag)
                             cnt_lst = asf.contact_list_json(cl_ag,msg_sender_jid)
                             await self.send(cnt_lst)
@@ -486,6 +578,8 @@ class VA(Agent):
                     globals.ret_dact= 0
                     all_auctions = pd.concat([all_auctions, process_df],\
                                         ignore_index=True)
+                    #print("all auctions")
+                    #print(all_auctions)
                     pending_au = True
                     process_df = pd.DataFrame([], columns=['fab_start', 'processing_time', \
                                  'start_auction_before', 'start_next_auction_at',\
@@ -650,7 +744,7 @@ if __name__ == "__main__":
     start_auction_before = args.start_auction_before
     """Save to csv who I am"""
     va_data_df = asf.set_agent_parameters(my_name, my_full_name,\
-                 950,0.8,20000,40,'X500','NWW1','')
+                 950,0.8,20000,40,'400',5,1,555,555,'X500','NWW1','')
     conf_va_df = va_data_df[['coil_width', 'coil_length', 'coil_thickness']]
     va_data_df['accumulated_profit'] = 0
     va_data_df.at[0,'wh_available'] = "K, L, M, N"
@@ -658,7 +752,10 @@ if __name__ == "__main__":
     auction_df.at[0, 'number_preauction'] = 0
     auction_df.at[0, 'number_auction'] = 0
     auction_df.at[0, 'number_auction_completed'] = 0
+    all_winner_df = pd.DataFrame() 
     all_auctions = pd.DataFrame() # Storing history
+    winner_df_aux=pd.DataFrame() ####################################################### Winner dataframe pero con el ancho pedido y el ancho que tenia
+    winner_df = pd.DataFrame()  ######################################################## 
     process_df = pd.DataFrame([], columns=['fab_start', 'processing_time', \
                  'start_auction_before', 'start_next_auction_at',\
                 'setup_speed', 'coil_width','coil_length', 'coil_thickness'])
@@ -667,6 +764,20 @@ if __name__ == "__main__":
     process_df.at[0,'setup_speed'] = 0.25 # Normal speed 15000 mm/min in m/s
     process_df.at[0, 'start_auction_before'] = datetime.datetime.now()
     medias_list = [140.]
+    price_energy_consumption = 0.222 #euros/KWh   Sergio 25 feb
+    aux_process_time=0
+    ##################################################################################### Dataframe parameters excel 25 feb S
+    ##################################################################################### Dataframe parameters excel 25 feb S
+    index_va = ['va09', 'va10', 'va11', 'va11', 'va12', 'va12']
+    df_parameters_energy=pd.DataFrame({'melting_code': ['*', '*', '1', '2','1','2'],
+              'a': [-4335, -4335, -8081.22, -141,-6011.6, -3855.45],
+              'b': [2.1, 2.1, 4.31, 3.27, 3.83, 2.4],
+              'c': [5405.53, 5405.53, 6826.2, 5943.73, 6742.25, 901.87],
+              'd': [191.27, 191.27, 240.12, 228.9, 195.85, 292.9],
+              'e': [212.31, 212.31, 319.5, 348.29, 264.99, 238.68],
+              'f': [9.44, 9.44, 12.68, 12.16, 11.74, 8.66]}, 
+              index=index_va)
+    ###############################################################
     fab_started_at = datetime.datetime.now()
     leeway = datetime.timedelta(minutes=int(2))
     op_times_df = pd.DataFrame([], columns=['AVG(ca_op_time)', 'AVG(tr_op_time)'])

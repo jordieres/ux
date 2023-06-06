@@ -291,6 +291,10 @@ class CoilAgent(Agent):
                             coil_df.at[0,'espesor'] = agent_df.loc[0,'espesor']
                             coil_df.at[0,'largo'] = agent_df.loc[0,'largo']
                             coil_df.loc[0,'param_f']= agent_df.loc[0,'parF']
+                            coil_df.loc[0,'artikel_gruppe']= agent_df.loc[0,'artikel_gruppe']
+                            coil_df.loc[0,'oel_sorte']= agent_df.loc[0,'oel_sorte']
+                            coil_df.loc[0,'single_reduction']= agent_df.loc[0,'single_reduction']
+                            coil_df.loc[0,'assivieru_ngkz']= agent_df.loc[0,'assivieru_ngkz']
                             coil_df.loc[0,'sdate']= agent_df.loc[0,'ship_date']
                             coil_df.at[0,'st'] = agent_df.loc[0,'st']
                             # Updating the BR register
@@ -315,6 +319,10 @@ class CoilAgent(Agent):
                                  'espesor': coil_df.loc[0,'espesor'],\
                                  'largo': coil_df.loc[0,'largo'],\
                                  'parF': coil_df.loc[0,'param_f'],\
+                                 'artikel_gruppe': coil_df.loc[0,'artikel_gruppe'],\
+                                 'oel_sorte': coil_df.loc[0,'oel_sorte'],\
+                                 'single_reduction': coil_df.loc[0,'single_reduction'],\
+                                 'assivieru_ngkz': coil_df.loc[0,'assivieru_ngkz'],\
                                  'sdate': coil_df.loc[0,'ship_date'],\
                                  'status': coil_status_var, \
                                  'parF': coil_df.loc[0,'param_f'],\
@@ -339,6 +347,10 @@ class CoilAgent(Agent):
                                  'espesor': coil_df.loc[0,'espesor'],\
                                  'largo': coil_df.loc[0,'largo'],\
                                  'parF': coil_df.loc[0,'param_f'],\
+                                 'artikel_gruppe': coil_df.loc[0,'artikel_gruppe'],\
+                                 'oel_sorte': coil_df.loc[0,'oel_sorte'],\
+                                 'single_reduction': coil_df.loc[0,'single_reduction'],\
+                                 'assivieru_ngkz': coil_df.loc[0,'assivieru_ngkz'],\
                                  'sdate': coil_df.loc[0,'ship_date'],\
                                  'status': coil_status_var, \
                                  'parF': coil_df.loc[0,'param_f'],\
@@ -384,6 +396,10 @@ class CoilAgent(Agent):
                                  'largo': coil_df.loc[0,'largo'],\
                                  'sdate': coil_df.loc[0,'sdate'],\
                                  'parF': coil_df.loc[0,'param_f'],\
+                                 'artikel_gruppe': coil_df.loc[0,'artikel_gruppe'],\
+                                 'oel_sorte': coil_df.loc[0,'oel_sorte'],\
+                                 'single_reduction': coil_df.loc[0,'single_reduction'],\
+                                 'assivieru_ngkz': coil_df.loc[0,'assivieru_ngkz'],\
                                  'sgrade':coil_df.loc[0,'sgrade']}]).to_json(\
                                             orient="records")
                             rep= asf.msg_to_agnt(st,msgl.loc[0,'id'])
@@ -401,6 +417,10 @@ class CoilAgent(Agent):
                                  'espesor': coil_df.loc[0,'espesor'],\
                                  'largo': coil_df.loc[0,'largo'],\
                                  'parF': coil_df.loc[0,'param_f'],\
+                                 'artikel_gruppe': coil_df.loc[0,'artikel_gruppe'],\
+                                 'oel_sorte': coil_df.loc[0,'oel_sorte'],\
+                                 'single_reduction': coil_df.loc[0,'single_reduction'],\
+                                 'assivieru_ngkz': coil_df.loc[0,'assivieru_ngkz'],\
                                  'sdate': coil_df.loc[0,'sdate'],\
                                  'sgrade':coil_df.loc[0,'sgrade']}]).to_json(\
                                             orient="records")
@@ -530,7 +550,9 @@ class CoilAgent(Agent):
                         'ancho':str(int(ancho)),'sg':sgrd,\
                         'espesor':str(float(esp)),'largo':str(int(largo)),\
                         'mydir':my_dir,'agent':i.split('@')[0],\
-                        'parF': param_f,'sdate':ship_date,'st':'ini'}])
+                        'parF': param_f, 'artikel_gruppe' : artikel_gruppe,\
+                        'oel_sorte': oel_sorte, 'single_reduction': single_reduction, \
+                        'assivieru_ngkz': assivieru_ngkz, 'sdate':ship_date,'st':'ini'}])
             addbr = reg_cl.to_json(orient="records")
             cl_to_br = asf.find_br(i,addbr,'create')
             la_brw = asf.contact_list_json(cl_to_br,globals.gbrw_jid)
@@ -565,6 +587,11 @@ if __name__ == "__main__":
     parser.add_argument('-ll', '--lcoil', type=int, metavar='', required=False, default='20000', help='lcoil: 20000')
     parser.add_argument('-thk', '--thickness', type=str, metavar='', required=False, default='0.8', help='thickness: 0.8')
     parser.add_argument('-F', '--parameter_F', type=float, metavar='', required=False, default=10, help='parameter_F: 10-79')
+    parser.add_argument('-ag', '--artikel_gruppe', type=str, metavar='', required=False, default='400', help='artikel_gruppe: 0-1000')   #Sergio 28/03 tiene que ser un string normalmente 3 digitos
+    parser.add_argument('-os', '--oel_sorte', type=int, metavar='', required=False, default=5, help='oel_sorte: 0-10')   #Sergio 28/03
+    parser.add_argument('-sr', '--single_reduction', type=int, metavar='', required=False, default=1, help='single_reduction: 0 single red, 1 double red')   #Sergio 28/03
+    parser.add_argument('-asn', '--assivieru_ngkz', type=int, metavar='', required=False, default=555, help='assivieru_ngkz: 0-1000')   #Sergio 28/03
+    parser.add_argument('-ark', '--arkerung_mes', type=int, metavar='', required=False, default=555, help='arkerung_mes: 0-1000')   # JOM 6/6
     parser.add_argument('-ph', '--path', type=str, metavar='', required=False, default='VA0*', help='path: "NWW[3,4];VA0*"')
     parser.add_argument('-u', '--user_name', type=str, metavar='', required=False, help='User to the XMPP platform')  # JOM 10/10
     parser.add_argument('-p', '--user_passwd', type=str, metavar='', required=False, help='Passwd for the XMPP platform')  # JOM 10/10
@@ -581,13 +608,18 @@ if __name__ == "__main__":
     coil_status_var = args.status
     location = args.location
     code = args.code
-    path = args.path.split(';')
+    path = args.path.replace('\\','').split(';')
     ordr = args.order
     ancho= args.ancho
     esp  = args.thickness
     largo= args.lcoil
     sgrd = args.sgrade
     param_f = int(args.parameter_F)
+    artikel_gruppe = int(args.artikel_gruppe)
+    oel_sorte = int(args.oel_sorte)
+    single_reduction = int (args.single_reduction)
+    assivieru_ngkz = int(args.assivieru_ngkz)
+    arkerung_mes = int(args.arkerung_mes)
     ship_date = args.order_shdate
     globals.ipth= 0
     globals.pth = path
@@ -596,8 +628,9 @@ if __name__ == "__main__":
     auction_finish_at = ""
     """Save to csv who I am"""
     coil_df = asf.set_agent_parameters_coil(my_dir, code, my_full_name, \
-                    ancho, esp, largo, sgrd, location, ordr,param_f,\
-                    path, ship_date)
+                ancho, esp, largo, sgrd, location, ordr,param_f, artikel_gruppe,\
+                oel_sorte, single_reduction, assivieru_ngkz,arkerung_mes, path, \
+                ship_date)
     coil_df.at[0, 'budget'] = args.budget
     budget = coil_df.loc[0, 'budget']
     bid_register_df = pd.DataFrame()

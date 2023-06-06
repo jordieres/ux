@@ -47,7 +47,19 @@ class CoilAgent(Agent):
                         z = re.match(path[0],sender_jid)
                         if z != None:  # The plant is a target otherwise not.
                             coil_enter = 1
+                        #
+                        if bid_register_df.shape[0] > 0: # If the coil already passed
+                            p0j = bid_register_df['agent_type'] == 'VA'
+                            p1j = bid_register_df['status'] == 'won'
+                            if bid_register_df[p0j & p1j].shape[0] > 0:
+                                p1j = bid_register_df['status'] == ''
+                                bid_register_df.loc[p0j & p1j,'status'] = 'gone'
                         if msgbdy.loc[0,'purpose'] == 'invitation':
+                            if bid_register_df.shape[0] > 0:
+                                p0j = bid_register_df['agent_type'] == 'VA'
+                                p1j = bid_register_df['status'] == 'won'
+                                if bid_register_df[p0j & p1j].shape[0] > 0:
+                                    coil_enter = 0 # Already passed
                             if coil_enter == 1: # Bid suitable for offer
                                 # Create bid
                                 bid_mean = va_coil_msg_df.loc[0, 'bid_mean']
@@ -107,6 +119,11 @@ class CoilAgent(Agent):
                             """ Receive request to counterbid """
                             counterbid = asf.create_counterbid(\
                                         va_coil_msg_df,coil_df)
+                            if bid_register_df.shape[0] > 0:
+                                p0j = bid_register_df['agent_type'] == 'VA'
+                                p1j = bid_register_df['status'] == 'won'
+                                if bid_register_df[p0j & p1j].shape[0] > 0:
+                                    counterbid = 0 # Already passed
                             """ Prepare bid to send to va """
                             coil_df.loc[0, 'counterbid'] = counterbid
                             coil_df['User_name_va'] = str(msg_sender_jid)
@@ -184,8 +201,13 @@ class CoilAgent(Agent):
                                                  # invitations are pending
                                     pj = bid_register_df.index[p0j & p2j]
                                     minacc=bid_register_df.loc[pj,'accepted_bid'].min()
-                                    p0j= bid_register_df.accepted_bid==minacc
-                                    pjs= bid_register_df.index[p0j & p2j]
+                                    p3j= bid_register_df.accepted_bid==minacc
+                                    p1j= bid_register_df['status'] == 'won'
+                                    pjs= bid_register_df.index[p0j & p2j & p3j]
+                                    if bid_register_df[p0j & p1j].shape[0] > 0:
+                                        p1j = bid_register_df['status'] == ''
+                                        bid_register_df.loc[p0j & p1j & p3j,'status'] = 'gone'
+                                        pjs= []
                                     for icl in pj:
                                         plant_id = bid_register_df.loc[icl,'idres']
                                         sqf = bid_register_df.loc[icl,'seq']
@@ -211,9 +233,11 @@ class CoilAgent(Agent):
                                             bid_register_df.loc[icl,'status'] = 'won'
                                             # Changing the position of the coil and ending.
                                             globals.ipth = globals.ipth + 1
-                                            if len(globals.pth) == globals.ipth: # Coil Ended
+                                            if 'END' not in globals.pth:
+                                                globals.pth.append('END')
+                                            tgt = globals.pth[globals.ipth]
+                                            if tgt == 'END': # Coil Ended
                                                 cbid = coil_df.loc[0,'counterbid']
-                                                globals.pth.append("END")
                                                 dt_end = datetime.datetime.now().strftime(\
                                                             "%Y-%m-%d %H:%M:%S")
                                                 msg_str = f'ENDEDUP: {my_full_name}, code:{code} '
@@ -228,7 +252,8 @@ class CoilAgent(Agent):
                             #
                             if va_coil_msg_df.at[0, 'bid_status'] == 'rejectedbid':
                                 pj = bid_register_df['idres']==msg_sender_jid and \
-                                        bid_register_df['accepted_bid'] == -1
+                                        bid_register_df['accepted_bid'] == -1 and \
+                                        bid_register_df['status'] == ''
                                 bid_register_df.loc[pj,'accepted_bid'] =  -10
                                 bid_register_df.loc[pj,'won_bid'] =  -10
                         #
@@ -449,6 +474,33 @@ class CoilAgent(Agent):
                 coil_msg_log = asf.msg_to_log(coil_inform_json, my_dir)
                 await self.send(coil_msg_log)
                 coil_status_var = "stand-by"
+
+        async def ask_exit(self):
+            global va_status_var, number, coil_mdf, seq_va, coil_status_var, \
+                        bid_register_df
+            dtw = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            lcbs= []
+            if coil_msgs_df.shape[0] > 0:
+                lcbs= coil_msgs_df['id'].to_list()
+            lcb2= []
+            if coil_msgs_df2.shape[0] > 0:
+                lcb2= coil_msgs_df2['id'].to_list()
+            lcb3= []
+            if coil_msgs_df3.shape[0] > 0:
+                lcb3= coil_msgs_df3['id'].to_list()
+            reg_cl = pd.DataFrame([{'id':my_full_name,'status':coil_status_var,\
+                                    'auction':seq_va,'date':dtw,'plants_bid': \
+                                    bid_register_df.to_json(),\
+                                    'msg': 'Launcher requests to exit.'}])
+            log_body    = asf.inform_log(my_full_name,\
+                                reg_cl,globals.glog_jid)
+            coil_msg_log = asf.msg_to_log(log_body, my_dir)
+            await self.send(coil_msg_log)
+            log_body    = asf.inform_log(my_full_name,\
+                                all_auctions,globals.glog_jid)
+            coil_msg_log = asf.msg_to_log(log_body, my_dir)
+            await self.send(coil_msg_log)
+            time.sleep(1)
 
         async def on_end(self):
             i     = globals.gcl_jid

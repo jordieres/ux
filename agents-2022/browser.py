@@ -63,6 +63,17 @@ class BrowserAgent(Agent):
                             await self.send(cl_ans)
                             glist = self.del_agnt(to_id,globals.tosend)
                             globals.tosend = glist
+                        if agent_df.loc[0,'purpose'] == 'answer_plist':
+                            id_agnt = agent_df.loc[0,'seq']
+                            contact_list = json.loads(agent_df.loc[0, 'msg'])
+                            # pdb.set_trace()
+                            to_agnt, to_id = self.ret_agnt(id_agnt)
+                            cl_agent= opf.rq_list(my_full_name, contact_list, \
+                                         to_agnt,'plant_list',to_id)
+                            cl_ans  = opf.contact_list_json(cl_agent,to_agnt)
+                            await self.send(cl_ans)
+                            glist = self.del_agnt(to_id,globals.tosend)
+                            globals.tosend = glist
 
                     elif agent_df.loc[0, 'purpose'] == "delete":
                         # message to remove coils of the active coils
@@ -112,6 +123,17 @@ class BrowserAgent(Agent):
                             globals.glog_jid})
                         await self.send(rq_clist_json)
 
+                    elif agent_df.loc[0, 'purpose'] == "plant_list":
+                        id_org = agent_df.loc[0,'seq']
+                        id_new = int(random.random()*10000)
+                        r = 'Request plant list'
+                        rq_clist = opf.rq_list(my_full_name,r,globals.glog_jid,\
+                                    'plant_list',id_new)
+                        rq_clist_json = opf.contact_list_json(rq_clist,'log')
+                        globals.tosend.append({'idorg':id_org,'agnt_org': \
+                            msg_sender_jid, 'idact':id_new,'agnt_end': \
+                            globals.glog_jid})
+                        await self.send(rq_clist_json)
 
                     elif agent_df.loc[0, 'purpose'] == "search":
                         msg_search = agent_df.loc[0, 'msg']

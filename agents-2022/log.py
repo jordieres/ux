@@ -27,7 +27,8 @@ signal.signal(signal.SIGALRM,handler)
 class LogAgent(Agent):
     class LogBehav(CyclicBehaviour):
         async def run(self):
-            global wait_msg_time, logger, log_status_var, active_agents, ip_machine, active_coil_agents
+            global wait_msg_time, logger, log_status_var, active_agents, ip_machine, active_coil_agents,\
+                   activep
             self.presence.on_subscribe = self.on_subscribe
             self.presence.on_unsubscribe = self.on_unsubscribe
             if log_status_var == "on":
@@ -64,10 +65,14 @@ class LogAgent(Agent):
                     """Read msg purpose"""
                     msg_2 = pd.read_json(msg.body)
                     if not hasattr(msg_2,'purpose'):
+                        # pdb.set_trace()
+                        activep = self.updtPlnts(msg.body,activep)
                         logger.info(msg.body)
                     elif msg_2.loc[0, 'purpose'] == 'inform error':
+                        activep = self.updtPlnts(msg.body,activep)
                         logger.error(msg.body)
                     elif 'IP' in msg_2:
+                        activep = self.updtPlnts(msg.body,activep)
                         logger.debug(msg.body)
                     elif msg_2.loc[0, 'purpose'] == 'new_coil':
                         self.counter += 1
@@ -99,6 +104,14 @@ class LogAgent(Agent):
                                     globals.gbrw_jid,'answer_clist',counter)
                         rq_clist_json = opf.contact_list_json(rq_clist,msg_sender_jid2)
                         await self.send(rq_clist_json)
+                    elif msg_2.loc[0, 'purpose'] == 'plant_list':
+                        contacts = activep['id'].unique().tolist()
+                        cl_msg = [ str(j) for j in contacts ]
+                        counter= int(msg_2.loc[0,'seq'])
+                        rq_clist = opf.rq_list(my_full_name, cl_msg,\
+                                    globals.gbrw_jid,'answer_plist',counter)
+                        rq_clist_json = opf.contact_list_json(rq_clist,msg_sender_jid2)
+                        await self.send(rq_clist_json)
 
                     elif  msg_2.loc[0, 'purpose'] == 'inform status':                          # TODO
                         if msg_2.loc[0, 'status'] == 'ended':
@@ -106,6 +119,7 @@ class LogAgent(Agent):
                     elif 'active_coils' in msg_2:
                         logger.critical(msg.body)
                     else:
+                        activep = self.updtPlnts(msg.body,activep)
                         logger.info(msg.body)
                     """Update coil status """
                     x = re.search("won auction to process", msg.body)
@@ -155,6 +169,38 @@ class LogAgent(Agent):
         async def on_unsubscribe(self, jid):
             print("[{}] Agent {} asked for UNsubscription. Let's aprove it.".format(self.agent.name, jid.split("@")[0]))
             self.presence.unsubscribe(jid)
+
+        def updtPlnts(self,mbody,activep):
+            bdy   = json.loads(mbody)
+            if len(bdy) > 0:
+                if 'id' not in bdy[0]:
+                    status_log = opf.log_status(my_full_name,'LOGERROR: ' + mbody , ip_machine)
+                    logger.debug(status_log)
+                    idobj = '-'
+                else:
+                    idobj = bdy[0]['id']
+                idst  = ""
+                idip  = ""
+                if 'status' in bdy[0]:
+                    idst = bdy[0]['status']
+                if 'IP' in bdy[0]:
+                    idip = bdy[0]['IP']
+                objy  = re.match("^c\d\d\d",idobj) or re.match("^launcher",idobj)
+                if not objy:
+                    if activep.shape[0] > 0:
+                        if activep.loc[(activep['id']==idobj)&(activep['st']==idst),\
+                                    :].shape[0] == 0:
+                            activep = pd.concat([activep,pd.DataFrame([{'t':\
+                                    datetime.datetime.now(),'id': idobj,\
+                                    'st':idst,'IP':idip}])])
+                    else:
+                        activep = pd.concat([activep,pd.DataFrame([{'t':\
+                                    datetime.datetime.now(),'id': idobj,\
+                                    'st':idst,'IP':idip}])])
+                    activep = activep.loc[activep['t'] > datetime.datetime.now() -\
+                                datetime.timedelta(seconds=600),:]
+                    activep.reset_index(drop=True,inplace=True)
+            return(activep)
 
     async def setup(self):
         b = self.LogBehav()
@@ -223,6 +269,7 @@ if __name__ == "__main__":
 
     """Logger info"""
     logger = logging.getLogger(__name__)
+    activep = pd.DataFrame([], columns=['t','id','st','IP'])
 
     """XMPP info"""
     if hasattr(args,'brw_agnt_id') :
