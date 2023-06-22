@@ -598,7 +598,6 @@ def recovery_log(platform,verbose,remote):
             if verbose:
                 print("No remote log.log requested but local copy doesn't exist")
             return None 
-        pdb.set_trace()
         lgf  = pd.read_csv(path,sep=';',header=None)
         lgf.columns = ['dtime','type','Agnt','Carrier','metadata']
         lgf['dtime'] = pd.to_datetime(lgf['dtime'])
@@ -610,6 +609,24 @@ def recovery_log(platform,verbose,remote):
         return({'mainlog':lgf,'metadata':rst, 'idxres':idxu})
     else:
         return None
+#
+def find_vals(obj,key,txt):
+    if key in obj.keys():
+        if txt in obj[key]:
+            return True
+    return False
+#
+def build_dct(lst):
+    res = {}
+    for i in lst:
+        pdb.set_trace()
+        lst2 = lst[i].split(':')
+        clv = lst2[0].strip()
+        val = ':'.join(lst2[1:])
+        if clv == 'code':
+            val = re.sub(r"^c",'',val)
+        res[clv] = val
+    return(res)
 #
 def auctions_log(lgs,mdt):
     def sjf(s):
@@ -626,6 +643,17 @@ def auctions_log(lgs,mdt):
         t  = '{'+scn+'}'
         return(t)
     #
+    #
+    # 
+    # TO BE FIXED as new info is there
+    jdx  = lgs['dict'].apply(lambda x: find_vals(x[0],'msg','ENDEDUP'))
+    endup= lgs['dict'].loc[jdx].reset_index(drop=True)
+    res  = endup.apply(lambda x: x[0]['msg'].replace('ENDEDUP: ','id:'))
+    pdb.set_trace()
+    sbs  = pd.DataFrame(res.apply(lambda x: build_dct(x.split(','))))
+    
+    
+    
     res = pd.DataFrame()
     sbs  = pd.DataFrame()
     idx1 = mdt.loc[:,'location_2'].notnull()
@@ -1031,18 +1059,21 @@ def main():
         # We check the last date for the log.log file
         if 'lastlog_date' in st.session_state:
             lastlog_date = st.session_state['latlog_date']
+            first_outcome= False
         else:
             lastlog_date = datetime.datetime.now()
-        if (datetime.datetime.now() - lastlog_date).total_seconds() > 120:
+            first_outcome= True
+        elapsed = (datetime.datetime.now() - lastlog_date).total_seconds()
+        if elapsed > 120 or first_outcome:
             tmpres = recovery_log(platform,True,True)
             if tmpres:
                 st.session_state['lastlog_date']= datetime.datetime.now()
+                first_outcome= False
         else: # Without remote copy of log.log
             tmpres = recovery_log(platform,True,False)
         if tmpres:
             loga = tmpres['mainlog']
             logb = tmpres['metadata']
-            pdb.set_trace()
             sbst = auctions_log(loga,logb)
         # Proceed with menus
         with df_cnt_1:
