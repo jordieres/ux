@@ -1,0 +1,1 @@
+launcher.py -oc 1140932 -sg 117.0 -at 0.2 -wi 808 -ag 330 -asn 3 -os 4 -sr 1 -sd 2023-04-30 -nc 3 -lc c1003978089,c1003978090,c1003978091 -po 600 -lp D098.7,D098.7,D098.7 -ll 12171,12231,12084 -so \(VA09|VA11\) -bag browser@apiict00.etsii.upm.es -lag log@apiict00.etsii.upm.es -u launcher@apiict00.etsii.upm.es -p DynReact -w 40

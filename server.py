@@ -579,38 +579,35 @@ def order_process(platform,machine,dctcoils,sellots,optplnts,password):
 #
 # JOM removed: read_log_for_coil & read_log_for_plant
 # JOM replacement: 
-def recovery_log(platform):
+def recovery_log(platform,verbose,remote):
     if platform in st.session_state['mchnvec_plnt']:
-        directory_log = st.session_state['mchnvec_plnt'][platform]['pltd']
-        machine       = st.session_state['mchnvec_plnt'][platform]['srvn']
-        ltmp = Path('/tmp/')
-        fd,path = tempfile.mkstemp(prefix='tmp_',dir=ltmp)
-        oshl =  " scp -p " + " @" + str(machine) +":" + directory_log + \
-                "/log.log " + path
-        err0 = subprocess.Popen(oshl, stdout=subprocess.PIPE, stdin=None, \
-                            stderr=subprocess.PIPE, close_fds=True, shell=True)
-        comm, err_1 = err0.communicate()
+        if remote: # Collecting the log.log from remote machine
+            directory_log = st.session_state['mchnvec_plnt'][platform]['pltd']
+            machine       = st.session_state['mchnvec_plnt'][platform]['srvn']
+            ltmp = Path('/tmp/')
+            fd,path = tempfile.mkstemp(prefix='log_',dir=ltmp)
+            oshl =  " scp -p " + " @" + str(machine) +":" + directory_log + \
+                    "/log.log " + path
+            err0 = subprocess.Popen(oshl, stdout=subprocess.PIPE, stdin=None, \
+                                stderr=subprocess.PIPE, close_fds=True, shell=True)
+            comm, err_1 = err0.communicate()
+            st.session_state['lpath'] = path
+        #
+        path = st.session_state['lpath']
+        if len(path) == 0:
+            if verbose:
+                print("No remote log.log requested but local copy doesn't exist")
+            return None 
+        pdb.set_trace()
         lgf  = pd.read_csv(path,sep=';',header=None)
         lgf.columns = ['dtime','type','Agnt','Carrier','metadata']
-        # lgf['metadata'] = lgf['metadata'].apply(json.loads)
-        lgf['dtime']    = pd.to_datetime(lgf['dtime'])
-        rst  = pd.DataFrame()
-        # pdb.set_trace()
-        for idx in lgf.index:
-            if len(lgf['metadata'][idx]) > 2:
-                dmd = json.loads(lgf['metadata'][idx])
-                try:
-                    if 'Profit' in dmd[0].keys():
-                        pd0 = pd.DataFrame.from_dict(dmd[0],orient='index').T
-                    else:
-                        pd0 = pd.DataFrame(dmd)
-                    pd0['idxold'] = idx
-                    rst = pd.concat([rst,pd0], axis=0)
-                except:
-                    print("k", sys.exc_info()[0]," value")
-                    pdb.set_trace()
-        rst.reset_index(inplace=True,drop=True)
-        return({'mainlog':lgf,'metadata':rst})
+        lgf['dtime'] = pd.to_datetime(lgf['dtime'])
+        lgf  = lgf.loc[lgf['metadata'].str.len() > 2,:]
+        lgf['dict']  = lgf['metadata'].apply(json.loads)
+        idx  = lgf['dict'].apply(lambda x: 'Profit' in x[0].keys())
+        idxu = lgf.loc[idx].index[lgf['dict'].loc[idx].apply(len).argmax()]
+        rst  = pd.DataFrame(lgf['dict'].loc[idxu])
+        return({'mainlog':lgf,'metadata':rst, 'idxres':idxu})
     else:
         return None
 #
@@ -641,6 +638,8 @@ def auctions_log(lgs,mdt):
     if idx2.sum() > 0:
         mdt2 = mdt.loc[idx2,'msg']
         idx3 = mdt2.str.contains('ENDEDUP')
+        # 
+        # to extract cost structure ... and glue it in the records
         sdt3 = mdt2.loc[idx3].apply(sjf)
         sdt4 = pd.DataFrame()
         for idx4 in sdt3.index:
@@ -693,6 +692,12 @@ def main():
         {'id':'PLANTS','icon':"building",'label':"PLANTS"},
         {'id':'OUTCOME','icon': "far fa-chart-bar", 'label':"OUTCOME"},
     ]
+    menu_style = {
+                "container": {"padding": "5!important", "background-color": "#ffffff"},
+                "icon": {"color": "blue", "font-size": "20px"}, 
+                "nav-link": {"font-size": "13px", "text-align": "left", "margin":"0px", "--hover-color": "#ADD8E6"},
+                "nav-link-selected": {"background-color": "#ADD8E6"},
+                }
     #
     # main_tabs = ['ORDERS','PLANTS','OUTCOME']
     optplnts  = ['VA08','VA09','VA10','VA11','VA12','VA13']
@@ -910,12 +915,7 @@ def main():
             machine = option_menu("Machines:", options = machines_parser,
                                     default_index = 0,
                                     menu_icon="cast",
-                                    styles={
-                    "container": {"padding": "5!important", "background-color": "#ffffff"},
-                    "icon": {"color": "blue", "font-size": "18px"}, 
-                    "nav-link": {"font-size": "14px", "text-align": "left", "margin":"0px", "--hover-color": "#ADD8E6"},
-                    "nav-link-selected": {"background-color": "#ADD8E6"},
-                })
+                                    styles=menu_style)
         #
         # if st.session_state['mchn_ordr'] == DEFAULT_ordrs:
         rght1= right_ordr.empty()
@@ -969,15 +969,8 @@ def main():
         df_container.dataframe(df_st)
         with left_plnt:
             plant_mchn = option_menu("Plant Selection", options = machines_parser,
-                                    default_index = 0,
-                                    menu_icon="minecart",
-                                    styles={
-                    "container": {"padding": "5!important", "background-color": "#ffffff"},
-                    "icon": {"color": "blue", "font-size": "20px"}, 
-                    "nav-link": {"font-size": "13px", "text-align": "left", "margin":"0px", "--hover-color": "#ADD8E6"},
-                    "nav-link-selected": {"background-color": "#ADD8E6"},
-                    }
-                    )
+                                    default_index = 0, menu_icon="minecart",
+                                    styles=menu_style)
         # plant_mchn = selectbox_with_default(left_plnt,df3['machines'],plant_mchn)
         if st.session_state['mchn_plnt'] != plant_mchn:
             st.session_state['mchn_plnt'] = plant_mchn
@@ -1015,74 +1008,67 @@ def main():
                 dir_plnts= st.session_state['mchnvec_plnt'][platform]['dirs'][plant_mchn]
     # Third part
     if current_tab == 'OUTCOME':
-        #
         st.empty()
         left_outcm, centrleft_outcm,right_outcm = st.columns((1,1,3))
         df_seleplnt_cnt= left_outcm.container()
         df_seleordr_cnt= centrleft_outcm.container()
+        df_selecoil_cnt= right_outcm.container()
+        df_cnt_1 = df_seleplnt_cnt.empty()
+        df_cnt_2 = df_seleordr_cnt.empty()
+        df_cnt_3 = df_selecoil_cnt.empty()
         #extraer TODAS las plantas activas
-        plnt_list = []
-        ordr_list = []
+        plnt_list = ['Select a Plant']
+        ordr_list = ['Select an Order']
         # pdb.set_trace()
         for mach in st.session_state['mchnvec_plnt'][platform]['plnts'].keys():
-            for i in st.session_state['mchnvec_plnt'][platform]['plnts'][mach]: plnt_list.append(i)
+            for i in st.session_state['mchnvec_plnt'][platform]['plnts'][mach]: 
+                plnt_list.append(i)
         for mach in st.session_state['mchnvec_ordr'][platform]['ords'].keys():
-            for j in st.session_state['mchnvec_ordr'][platform]['lnos'][mach]: ordr_list.append(j['oname'])
+            for j in st.session_state['mchnvec_ordr'][platform]['lnos'][mach]: 
+                ordr_list.append(j['oname'])
         plnt_outcm_list = list(set(plnt_list))
-        ordr_outcm_list = list(set(ordr_list))
-        with df_seleplnt_cnt:
-                plnt_selection = option_menu("Plant Selection", plnt_outcm_list,
-                                default_index = 0,
-                                menu_icon="building",
-                                styles={
-                "container": {"padding": "5!important", "background-color": "#ffffff"},
-                "icon": {"color": "blue", "font-size": "20px"}, 
-                "nav-link": {"font-size": "13px", "text-align": "left", "margin":"0px", "--hover-color": "#ADD8E6"},
-                "nav-link-selected": {"background-color": "#ADD8E6"},
-                }
-                )
-        if plnt_selection:
-            with df_seleordr_cnt:
-                    ordr_selection = option_menu("Order Selection", ordr_outcm_list,
-                                    default_index = 0,
-                                    menu_icon="envelope",
-                                    styles={
-                    "container": {"padding": "5!important", "background-color": "#ffffff"},
-                    "icon": {"color": "blue", "font-size": "20px"}, 
-                    "nav-link": {"font-size": "13px", "text-align": "left", "margin":"0px", "--hover-color": "#ADD8E6"},
-                    "nav-link-selected": {"background-color": "#ADD8E6"},
-                    }
-                    )
-                    coil_selection = option_menu("Coil Selection", st.session_state['mchnvec_ordr'][platform]['clts'],
-                                    default_index = 0,
-                                    menu_icon="box-fill",
-                                    styles={
-                    "container": {"padding": "5!important", "background-color": "#ffffff"},
-                    "icon": {"color": "blue", "font-size": "20px"}, 
-                    "nav-link": {"font-size": "13px", "text-align": "left", "margin":"0px", "--hover-color": "#ADD8E6"},
-                    "nav-link-selected": {"background-color": "#ADD8E6"},
-                    }
-                    )        
+        ordr_outcm_list = list(set(ordr_list))    
         # We check the last date for the log.log file
-        if lastlog_date:
-            print(lastlog_date, 'Here')
-            if (datetime.datetime.now() - lastlog_date).total_sconds() > 60:
-                lastlog = recovery_log(platform)
-                print(lastlog, 'Here 2')
-                if lastlog:
-                    lastlog_date = datetime.datetime.now()
-                    loga = lastlog['mainlog']
-                    logb = lastlog['metadata']
-                    sbst = auctions_log(loga,logb)
-            else:
-                lastlog = recovery_log(platform)
-                print(lastlog, 'HERE NO 2')
-                if lastlog:
-                    lastlog_date = datetime.datetime.now()
-                    loga = lastlog['mainlog']
-                    logb = lastlog['metadata']
-                    sbst = auctions_log(loga,logb)           
-        # pdb.set_trace()
+        if 'lastlog_date' in st.session_state:
+            lastlog_date = st.session_state['latlog_date']
+        else:
+            lastlog_date = datetime.datetime.now()
+        if (datetime.datetime.now() - lastlog_date).total_seconds() > 120:
+            tmpres = recovery_log(platform,True,True)
+            if tmpres:
+                st.session_state['lastlog_date']= datetime.datetime.now()
+        else: # Without remote copy of log.log
+            tmpres = recovery_log(platform,True,False)
+        if tmpres:
+            loga = tmpres['mainlog']
+            logb = tmpres['metadata']
+            pdb.set_trace()
+            sbst = auctions_log(loga,logb)
+        # Proceed with menus
+        with df_cnt_1:
+            plnt_selection = option_menu("Plant Selection", plnt_outcm_list,
+                                default_index = 0, menu_icon="building",
+                                styles=menu_style)
+        if plnt_selection != 'Select a Plant':
+            pdb.set_trace()
+            df_cnt_3.table(sbst.loc[:,['auction_number','code','coil_width',\
+                               'coil_thichness','order','offer','Profit']])
+            df_cnt_3.write('----')
+            with df_cnt_2:
+                ordr_selection = option_menu("Order Selection", ordr_outcm_list,
+                                    default_index = 0, menu_icon="envelope",
+                                    styles=menu_style)
+                pdb.set_trace()
+                if ordr_selection != 'Select an Order':
+                    df_cnt_3.table(sbst.loc[sbst.order==ordr_selection,:])
+            with df_cnt_3: 
+                op_coil_outcm = ['Select '+DEFAULT_outcm_coil] + \
+                            st.session_state['mchnvec_ordr'][platform]['clts']
+                coil_selection = option_menu("Coil Selection", op_coil_outcm,
+                                    default_index = 0, menu_icon="box-fill",
+                                    styles=menu_style)
+                
+        #
     if shutdown:
         # Si, hay que eliminar las carpetas . De hecho hay que procesar todas
         # las entradas del st.session_state[mchnvec_ordr|mchn_plnt][platform] para 

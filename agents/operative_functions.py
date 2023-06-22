@@ -501,11 +501,8 @@ def random_date(start, end):
     return start + timedelta(seconds=random_second)
 
 
-def wh_capacity_check(agent_full_name, agent_directory):
+def wh_capacity_check(agent_data_df, agent_directory):
     """Checks load on WH agent. Returns a str that can be used as body of msg"""
-    agent_data = pd.DataFrame([], columns=['id', 'agent_type', 'location_1', \
-                    'location_2', 'location', 'purpose', 'request_type', 'time', \
-                    'activation_time', 'int_fab'])
     if agent_data_df.loc[0, 'capacity'] == agent_data_df.loc[0, 'load']:
         msg_body = "negative"
     elif agent_data_df.loc[0, 'capacity'] > agent_data_df.loc[0, 'load']:
@@ -764,7 +761,7 @@ def locations_min_distances():
     return ca_locations_dist_df
 
 
-def get_tr_list(slot, br_data_df, agent_full_name, agent_directory):
+def get_tr_list(slot, br_data_df, agent_df, agent_directory):
     """Returns a df containing name, location and jid_name (User_name) of active tr agents"""
     # agent_df = pd.read_csv(f'{agent_full_name}.csv', header=0, delimiter=",", engine='python')
     # agents_df = agents_data()
@@ -822,7 +819,7 @@ def get_tr_list(slot, br_data_df, agent_full_name, agent_directory):
     return results
 
 
-def get_wh_list(br_data_df, agent_full_name, agent_directory):
+def get_wh_list(br_data_df, agent_df, agent_directory):
     """Returns a df containing name, location and jid_name (User_name) of active wh agents"""
     agents_df = globals.agnts_full
     br_data_df['new_col'] = br_data_df['agent_type'].astype(str) ### esto no s       si deber      a cambiarlo
@@ -871,7 +868,7 @@ def get_wh_list(br_data_df, agent_full_name, agent_directory):
     return results
 
 
-def get_coil_list(br_data_df, agent_full_name, agent_directory):
+def get_coil_list(br_data_df, agent_df, agent_directory):
     """Returns a df containing name, location and jid_name (User_name)
     of active coil agents. Coils are sorted by distance"""
     agents_df = globals.agnts_full
@@ -1202,7 +1199,7 @@ def production_cost(configuracion_df,coil_df, i):
     z = coil_df.loc[i,'ancho'] - configuracion_df.loc[0,'coil_width']
     m = coil_df.loc[i,'largo'] - configuracion_df.loc[0,'coil_length']
     n = coil_df.loc[i,'espesor'] - configuracion_df.loc[0,'coil_thickness']
-    cost = float(z * 4 + m * 0.05 + n * 2)
+    cost = abs(float(z * 4 + m * 0.05 + n * 2))
     return cost
 
 def transport_cost(to, From_location):
@@ -1345,12 +1342,14 @@ def va_bid_evaluation(coil_msgs_df, va_data_df, step, price_energy_consumption, 
 
     if step == 'bid':
         results = coil_msgs_df[['agent_type', 'id', 'coil_jid', 'bid', \
+                            'production_cost', 'transport_cost', 'energy_cost',\
                             'minimum_price','difference', 'ancho', 'largo',\
                             'espesor', 'ship_date','budget_remaining']]
         
         results = results.sort_values(by=['difference'], ascending = True)             #s
     else: # 'counterbid'
         results = coil_msgs_df[['agent_type', 'id', 'coil_jid', 'bid', \
+                            'production_cost', 'transport_cost', 'energy_cost',\
                             'minimum_price', 'ancho', 'largo','difference',\
                             'espesor', 'ship_date','budget_remaining',\
                             'counterbid','profit','User_name_va','plant_rule', 'oel_sorte']]
@@ -1377,6 +1376,10 @@ def va_result(coil_ofertas_df, jid_list,step):
         df.at[i, 'Bid'] = coil_ofertas_df.loc[i, 'bid']
         df.at[i, 'Difference'] = coil_ofertas_df.loc[i, 'difference']
         df.at[i, 'Budget_remaining'] = coil_ofertas_df.loc[i, 'budget_remaining']
+        df.at[i, 'prod_cost'] = coil_ofertas_df.loc[i, 'production_cost']
+        df.at[i, 'transport_cost'] = coil_ofertas_df.loc[i, 'transport_cost']
+        df.at[i, 'energy_cost'] = coil_ofertas_df.loc[i, 'energy_cost']
+
 
         if step == 'counterbid' :
             df.at[i, 'Counterbid'] = coil_ofertas_df.loc[i, 'counterbid']
@@ -2222,9 +2225,8 @@ def send_va(my_full_name, number, bid_mean, auction_level, jid_list):
     df.loc[0, 'to'] = json.dumps(jid_list)
     df.loc[0, 'IP'] = globals.IP
     return df
-
-
-def send_va_2(my_full_name, number, bid_mean, auction_level, ):
+#
+def send_va_2(my_full_name, number, bid_mean, auction_level, to):
     df = pd.DataFrame()
     df.loc[0, 'id'] = my_full_name
     df.loc[0, 'purpose'] = 'inform'
@@ -2237,10 +2239,10 @@ def send_va_2(my_full_name, number, bid_mean, auction_level, ):
         df.loc[0, 'msg'] = 'send acceptance'
     df.loc[0, 'number'] = number
     df.loc[0, 'bid_mean'] = bid_mean
-    df.loc[0, 'to'] = json.dumps(jid_list)
+    df.loc[0, 'to'] = json.dumps(to)
     df.loc[0, 'IP'] = globals.IP
     return df
-
+#
 def send_to_va_msg(my_full_name, bid, to, level):
     df = pd.DataFrame()
     df.loc[0, 'id'] = my_full_name
