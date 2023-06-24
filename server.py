@@ -612,6 +612,8 @@ def recovery_log(platform,verbose,remote):
 #
 def find_vals(obj,key,txt):
     if key in obj.keys():
+        if obj[key] is None:
+            return(False)
         if txt in obj[key]:
             return True
     return False
@@ -619,73 +621,56 @@ def find_vals(obj,key,txt):
 def build_dct(lst):
     res = {}
     for i in lst:
-        pdb.set_trace()
-        lst2 = lst[i].split(':')
+        lst2 = i.split(':')
         clv = lst2[0].strip()
-        val = ':'.join(lst2[1:])
+        val = ':'.join([k.strip() for k in lst2[1:]])
         if clv == 'code':
             val = re.sub(r"^c",'',val)
         res[clv] = val
     return(res)
 #
 def auctions_log(lgs,mdt):
-    def sjf(s):
-        ss = s.split(',')
-        ss = [j.strip() for j in ss]
-        lss= []
-        for iss in ss:
-            if 'by' in iss:
-                jss = iss.replace('by: ','"by":"')+'"'
-            else:
-                jss = '"'+iss.replace(' ','').replace(':','":"').replace(',','","')+'"'
-            lss.append(jss)
-        scn= ','.join(lss)
-        t  = '{'+scn+'}'
-        return(t)
     #
+    # Processing END
+    jdx  = lgs['dict'].apply(lambda x: find_vals(x[0],'location_2','END'))
+    endt = lgs['dict'].loc[jdx].reset_index(drop=True)
+    res0 = endt.apply(lambda x: {'agid':x[0]['coil_auction_winner'], \
+            'Length':x[0]['coil_length'],'Width':x[0]['coil_width'],\
+            'Thickness':x[0]['coil_thickness'],'Weight':x[0]['coil_weight'],\
+            'ShipDate':x[0]['ship_date'],'ActiveCoils':x[0]['active_coils'],\
+            'AuctionCoils':x[0]['auction_coils'][0].replace('"[','').replace(']"',''\
+            ).replace('[','').replace(']','').replace(' ','').replace("'",""\
+            ).split(',')})
+    sbs0 = pd.DataFrame(res0.tolist())
     #
-    # 
-    # TO BE FIXED as new info is there
+    # Processing ENDEDUP
     jdx  = lgs['dict'].apply(lambda x: find_vals(x[0],'msg','ENDEDUP'))
     endup= lgs['dict'].loc[jdx].reset_index(drop=True)
     res  = endup.apply(lambda x: x[0]['msg'].replace('ENDEDUP: ','id:'))
-    pdb.set_trace()
-    sbs  = pd.DataFrame(res.apply(lambda x: build_dct(x.split(','))))
-    
-    
-    
-    res = pd.DataFrame()
-    sbs  = pd.DataFrame()
-    idx1 = mdt.loc[:,'location_2'].notnull()
-    if idx1.sum() > 0:
-        lbls = ['auction_number','coil_auction_winner','location','location_1','location_2', \
-                'ship_date','coil_length','coil_width','coil_thickness','bid','budget','Profit',\
-                'idxold']
-        sbs  = mdt.loc[idx1,lbls]
-    idx2 = mdt['msg'].notnull()
-    if idx2.sum() > 0:
-        mdt2 = mdt.loc[idx2,'msg']
-        idx3 = mdt2.str.contains('ENDEDUP')
-        # 
-        # to extract cost structure ... and glue it in the records
-        sdt3 = mdt2.loc[idx3].apply(sjf)
-        sdt4 = pd.DataFrame()
-        for idx4 in sdt3.index:
-            dmd = json.loads(sdt3.loc[idx4])
-            pd0 = pd.DataFrame(dmd,index=[idx4])
-            sdt4= pd.concat([sdt4,pd0], axis=0)
-            res = sbs.merge(sdt4,left_on='coil_auction_winner',right_on='ENDEDUP')
-        res['auction_number'] = res['auction_number'].astype(int)
-        res.index = sbs.index
-    return(res)
+    sbs  = pd.DataFrame(res.apply(lambda x: build_dct(x.split(','))).tolist())
+    #
+    # Processing AU_ENDED
+    jdx  = lgs['dict'].apply(lambda x: find_vals(x[0],'msg','AU_ENDED'))
+    ended= lgs['dict'].loc[jdx].reset_index(drop=True)
+    res2 = ended.apply(lambda x: x[0]['msg'].replace('AU_ENDED:','plant:'))
+    sbs2 = pd.DataFrame(res2.apply(lambda x: build_dct(x.split(','))).tolist())    
+    # 
+    # merging components
+    mg0  = pd.merge(mdt,sbs0,left_on="Coil",right_on="agid")
+    mg0  = mg0.drop(['agid'], axis=1)
+    mg1  = pd.merge(mg0,sbs,left_on="Coil",right_on="id")
+    mg1  = mg1.drop(['id'], axis=1)
+    mg2  = pd.merge(mg1,sbs2[['plant','auction','winner']],left_on="Coil", \
+                    right_on="winner")
+    mg2  = mg2.drop(['winner'], axis=1)
+    mg2.index = mdt.index
+    return(mg2)
 #
-#
+# ==========================================================================
 #
 def main():
     #
-    # ==================================================================================================
     # Main program
-    #
     parser = argparse.ArgumentParser()
     # streamlit run nuevo.py -- --machines 138.100.82.175 138.100.82.241 --platforms apiict00.etsii.upm.es --platforms apiict01.etsii.upm.es
     parser.add_argument('-m','--machines',nargs='+', type=str, \
@@ -1058,7 +1043,7 @@ def main():
         ordr_outcm_list = list(set(ordr_list))    
         # We check the last date for the log.log file
         if 'lastlog_date' in st.session_state:
-            lastlog_date = st.session_state['latlog_date']
+            lastlog_date = st.session_state['lastlog_date']
             first_outcome= False
         else:
             lastlog_date = datetime.datetime.now()
@@ -1082,7 +1067,7 @@ def main():
                                 styles=menu_style)
         if plnt_selection != 'Select a Plant':
             pdb.set_trace()
-            df_cnt_3.table(sbst.loc[:,['auction_number','code','coil_width',\
+            df_cnt_3.table(sbst.loc[:,['auction','code','coil_width',\
                                'coil_thichness','order','offer','Profit']])
             df_cnt_3.write('----')
             with df_cnt_2:
@@ -1122,6 +1107,9 @@ def main():
                 killall = "ssh "+str(mach)+' " rm -rf ./tmp*"'
                 out_2 = subprocess.Popen(killall, stdout=None, stdin=None, stderr=None, \
                                 close_fds=True, shell=True, universal_newlines = True)
+        # Removing the log.log local copy used
+        if 'lpath' in st.session_state:
+            os.remove(st.session_state['lpath'])
         # Terminar el proceso.
         st.stop()
         sys.exit()
