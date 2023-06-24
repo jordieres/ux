@@ -389,7 +389,7 @@ if __name__ == "__main__":
     each_coil_price = round((args.price_order/args.number_coils),2)
     list_coils = args.list_coils
     list_lengths = args.list_lengths
-    string_operations = args.string_operations
+    string_operations = args.string_operations.replace('\\','')
     globals.string_operations = string_operations
     list_ware = args.list_position
     change_budget = args.change_budget
