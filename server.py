@@ -19,6 +19,8 @@ from streamlit_option_menu import option_menu
 from hydralit.hydra_app import HydraApp
 from inspect import trace
 #
+import signal
+#
 #
 st.set_page_config(
     page_title='UX Industry Process Optimizer',
@@ -28,6 +30,22 @@ st.set_page_config(
 )
 #
 st.markdown("<style>.element-container{opacity:1 !important}</style>", unsafe_allow_html=True)
+#
+#Static page footer
+addfooter = """
+<style>
+#MainMenu{
+    visibility:hidden;
+}
+footer{
+    visibility:visible;
+}
+footer:before{
+    content: 'Developed by Joaquin Ordieres & Adriana Leria';
+    display:block; position:relative; 
+    }
+</style>
+"""
 #
 DEFAULT = '-- Pick a value --'
 DEFAULT_pltfrm = '-- Select Platform --'
@@ -50,15 +68,24 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True,
 )
-#
+#cambios de colores, corregir checkbox
 st.markdown(""" 
     <style>
         div.stButton > button:first-child {
-            background-color: #ADD8E6;color:#ffffff
+            background-color: #ADD8E6;color:#ffffff;
+            font-family: sans-serif;
         }
         div.stButton > button:hover {
-            background-color: #0033CC;color:#ADD8E6;
+            background-color: #000080;color:#ffffff; border-color:#050000;
+            font-family: sans-serif;
         }
+        div.stDownloadButton > button:first-child {
+            background-color: #ADD8E6;color:#ffffff;
+            font-family: sans-serif;
+        }
+        div.stDownloadButton > button:hover {
+            background-color: #000080;color:#ffffff; border-color:#050000;
+            font-family: sans-serif;
     </style>
 """, unsafe_allow_html=True)
 #
@@ -392,7 +419,8 @@ def tabs(obj,default_tabs = [], default_active_tab=0):
             div[role=radiogroup] {
                 flex-direction: unset
             }
-            div[role=radiogroup] label {             
+            div[role=radiogroup] label { 
+                font-family: sans-serif;            
                 border: 1px solid #999;
                 background: #EEE;
                 padding: 4px 12px;
@@ -433,6 +461,12 @@ def init_vars(platform):
         st.session_state['areaordrs']    = None
     if 'tgplnts' not in st.session_state:
         st.session_state['tgplnts'] = []
+    if 'plnt_selection' not in st.session_state:
+        st.session_state['plnt_selection'] = 'Select a Plant'
+    if 'ordr_selection' not in st.session_state:
+        st.session_state['ordr_selection'] = 'Select an Order'
+    if 'cl_selection' not in st.session_state:
+        st.session_state['coil_selection'] = 'Select Coil'
     return(None)
 #
 def setup(center_gnrlsect,platform,log_mach,log, browser, launcher,password):
@@ -598,13 +632,19 @@ def recovery_log(platform,verbose,remote):
             if verbose:
                 print("No remote log.log requested but local copy doesn't exist")
             return None 
-        lgf  = pd.read_csv(path,sep=';',header=None)
+        try: 
+            lgf  = pd.read_csv(path,sep=';',header=None)
+        except:
+            return None
         lgf.columns = ['dtime','type','Agnt','Carrier','metadata']
         lgf['dtime'] = pd.to_datetime(lgf['dtime'])
         lgf  = lgf.loc[lgf['metadata'].str.len() > 2,:]
         lgf['dict']  = lgf['metadata'].apply(json.loads)
         idx  = lgf['dict'].apply(lambda x: 'Profit' in x[0].keys())
-        idxu = lgf.loc[idx].index[lgf['dict'].loc[idx].apply(len).argmax()]
+        try: 
+            idxu = lgf.loc[idx].index[lgf['dict'].loc[idx].apply(len).astype(float).argmax()]
+        except:
+            return None
         rst  = pd.DataFrame(lgf['dict'].loc[idxu])
         return({'mainlog':lgf,'metadata':rst, 'idxres':idxu})
     else:
@@ -679,11 +719,16 @@ def auctions_log(lgs,mdt):
     mg3.index = mdt.index
     return(mg3)
 #
-# ==========================================================================
+#
+#
 #
 def main():
     #
+    # ==================================================================================================
     # Main program
+    #
+    st.markdown(addfooter, unsafe_allow_html=True)
+    #
     parser = argparse.ArgumentParser()
     # streamlit run nuevo.py -- --machines 138.100.82.175 138.100.82.241 --platforms apiict00.etsii.upm.es --platforms apiict01.etsii.upm.es
     parser.add_argument('-m','--machines',nargs='+', type=str, \
@@ -692,6 +737,8 @@ def main():
                         help='Available negotiation platforms.')
     parser.add_argument('-l','--log_mach', type=str, \
                         help="Machine where the log.log file is going to be stored")
+    #
+    st.session_state['state'] = os.getpid()
     #
     #Name convention columns: location on the page_section of the program
     #
@@ -742,7 +789,7 @@ def main():
     title_container= st.container()
     #
     left_gnrlsect, center_gnrlsect, right_gnrlsect = title_container.columns((2,4,1))
-    left_gnrlsect.image('logo.png', width=128)
+    #left_gnrlsect.image('logo.png', width=128)
     #
     lst_orders     = []
     lst_plnts      = []
@@ -765,7 +812,14 @@ def main():
     #
     if platform == DEFAULT_pltfrm:
         current_tab = ''
+        left_gnrlsect.image('logo2.png', use_column_width = True)
+        #left_gnrlsect.image('logo.png', width=128)
+        left_gnrlsect.header('Welcome!')
+        left_gnrlsect.write('Here you will manage your Multi-agent System.')
+        left_gnrlsect.write('You will be able of keeping track of your agents and bids, their statuses and even uploading order forms and launching them!')
+        center_gnrlsect.write('\n\n\n\n')
         center_gnrlsect.write('**Select the targeted plant(s)**')
+
         if sum(v for k,v in optg.items()) == 0:
             for itg in range(len(optplnts)):
                 optg[itg] = center_gnrlsect.checkbox(optplnts[itg])
@@ -780,14 +834,9 @@ def main():
         launcher = 'launcher@' + str(platform)
         #
         center_gnrlsect.write('\n')
-        left_gnrlsect.header('Welcome!')
-        left_gnrlsect.write('Here you will manage your Multi-agent System.')
-        left_gnrlsect.write('You will be able of keeping track of your agents and bids, their statuses and even uploading order forms and launching them!')
-        # st.warning('Please, to start the session you need to pick a the plant(s) and the platform in this order')
-        center_gnrlsect.image('logo2.png', use_column_width = True)
-        center_gnrlsect.write('\n\n\n\n')
-        original_warning =  '<p style="font-family:Courier; color:Red; font-size: 20px;">' + \
-                            '<b><it>Please, to start the session you need to pick the plant(s) ' + \
+        st.markdown('<link rel="stylesheet" href="https://cdnjs.cloudfare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" crossorigin="anonymous">', unsafe_allow_html=True)
+        original_warning =  '<p style="font-family:sans-serif; color:Red; font-size: 20px;">' + \
+                            '<i class="fa-light fa-triangle-exclamation"></i><b><it>Please, to start the session you need to pick the plant(s) ' + \
                             'and the platform in this order</it></b>'
         center_gnrlsect.markdown(original_warning, unsafe_allow_html=True)
         #
@@ -818,10 +867,29 @@ def main():
             placeholder    = st.empty()
             title_container= st.container()
             left_gnrlsect, center_gnrlsect, right_gnrlsect = title_container.columns((2,4,1))
-            left_gnrlsect.image('logo.png', width=128)
+            #left_gnrlsect.image('logo.png', width=128)
             st.session_state['placeholder'] = placeholder
         #
     if platform != DEFAULT_pltfrm:
+        #Static page header
+        st.markdown('<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">', unsafe_allow_html=True)
+        st.markdown("""
+        <nav class="navbar fixed-top navbar-expand-lg navbar-dark" style="background-color: #000080; top: 5%;">
+            <a class="navbar-brand" href="https://www.upm.es/observatorio/vi/index.jsp?pageac=actividad.jsp&id_actividad=311548" target="_blank" >DynReAct</a>
+            <img src= "logo.png" style="widht:30px;height:20px"/>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link" href="https://www.upm.es/observatorio/vi/index.jsp?pageac=actividad.jsp&id_actividad=311548" target="_blank">About Us</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="mailto:a.leria@alumnos.upm.es">Contact Us</a>
+                    </li>
+                </ul>
+            </div>
+        </nav>    
+        """, unsafe_allow_html=True)
+        #
         log      = 'log@' + str(platform)
         browser  = 'browser@' + str(platform)
         launcher = 'launcher@' + str(platform)         
@@ -832,10 +900,10 @@ def main():
             log_st, brw_st= check_agents(log_mach, platform, password, directory_log)
         #
         # Setting interaction buttons.
-        shutdown = right_gnrlsect.button('Shutdown')
-        st.session_state['shutdown'] = shutdown
+        left_gnrlsect.image('logo.png', width = 250)
         request_agent_list = right_gnrlsect.button('Agent List?')
         st.session_state['req_agnt_lst'] = request_agent_list
+        #
         #
         if log_st != 1 or brw_st != 1: # If both are 1, platform and agents are running.
             kill_agents(log_mach,directory_log,log_st,brw_st)
@@ -854,9 +922,11 @@ def main():
             st.session_state['pltvec'][platform] = {}
             st.session_state['pltvec'][platform]['local_log'] = path   
         #
+        #
         if df_st.shape[0] > 0:
             st.session_state['df_st'] = df_st
-            st.markdown("**_____________________________________________________________________**")            
+        #
+            #st.markdown("**_____________________________________________________________________**")            
         #
         #
         #
@@ -866,7 +936,7 @@ def main():
         else:
             old_tab  = current_tab
         #
-        over_theme = {'txc_inactive': '#ffffff'}
+        over_theme = {'txc_inactive': '#ffffff', 'menu_background': '#000080'}
         current_tab = hc.nav_bar(
             menu_definition=menu_data,
             override_theme=over_theme,
@@ -909,18 +979,52 @@ def main():
                 if st.session_state['PS'] is not None:
                     press_plant1 = st.session_state['PS']
                     plntsel    = st.session_state['plntsel']
+            #
+            df_cnt = center_gnrlsect.container()
+            df_container = df_cnt.empty()
+            try:
+                df_st = st.session_state['df_st']
+            except:
+                st.warning("Error: DF_ST not defined")
+            df_container.dataframe(df_st)
+        #
     #
     if current_tab == 'Home':
         # st.write(st.session_state['mchn_ordr'], 'Order')
         # st.write(st.session_state['mchn_plnt'], 'Plant')
-        df_cnt       = st.container()
-        df_container = df_cnt.empty()
-        try:
-            df_st = st.session_state['df_st']
-        except:
-            df_st = pd.DataFrame()
-        if df_st.shape[0] > 0:
-            df_container.dataframe(df_st)
+        df_container = st.container()
+        #
+        df_container.header("Your Journey Starts Here")
+        df_container.write('\n\n\n\n')
+        df_container.markdown("""
+            <div style="font-family: sans-serif; text-align: justify;">
+                <h4>Welcome!</h4>
+                <p>
+                You've already accomplished the first step; you've selected the targeted Plant(s) and negotiation site for the simulation. 
+                </p>
+                <p>
+                As you can see in the middle section of the page, you'll find a table displaying the number of Agents running at the momment. 
+                To update these values, please click on <i>"Agent List?"</i> and the most up to date data will be displayed
+                </p><p>
+                Then, you should designate the Orders you want to launch. You'll find the list of Lots of orders planned for your targeted Plant(s) under 
+                the tab <b>"Orders"</b>. Once the orders have been launched, on the right side of the page you'll be able to track the Order Codes that have been submitted.
+                </p><p>  
+                The next step is to select the Plant(s). You'll find the list of Plant(s) you've already selected in the landing page under the tab <b>"Plants"</b>. 
+                As mentioned above, once the plant(s) have been launched, on the right side of the page you'll be able to track the Plant(s) that have been submitted.
+                </p><p>
+                Finally, after the scheduling is finished and all the bids have been completed (you can check this by seeing that the nº of Coils is 0). 
+                You can check the results of the bids by going to the tab: <b>"Outcome</b>". Here, you'll be able to check the most important metrics for any of the agents (Plant, Order, Coil)
+                and you'll be able to export the data to an excel file, by clicking on the <i>"Export"</i> button.
+                </p><p>
+                Once you've finished your tasks, please remember to click on <b>"Shutdown"</b>, and your session will be automatically terminated. Thank you!
+                </p>
+                <p>
+                If you experience any issue or you have any feedback to give us, please do not hestitate to click on "Contact Us" in the top of the page, and let us know how we can support you.
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
+        shutdown = df_container.button('Shutdown')
+        st.session_state['shutdown'] = shutdown
     #
     if current_tab == 'ORDERS':
         #
@@ -931,12 +1035,12 @@ def main():
         df_cnt = center_ordr.container()
         df_container = df_cnt.empty()
         # st.markdown("**_____________________________________________________________________**")
-        try:
-            df_st = st.session_state['df_st']
-        except:
-            st.warning("Error: DF_ST not defined")
+        #try:
+        #    df_st = st.session_state['df_st']
+        #except:
+        #    st.warning("Error: DF_ST not defined")
         #
-        df_container.dataframe(df_st)
+        #df_container.dataframe(df_st)
         with left_ordr:
             machine = option_menu("Machines:", options = machines_parser,
                                     default_index = 0,
@@ -979,6 +1083,8 @@ def main():
                 rgth1.write('Order(s) submitted')
                 right_ordr.write(st.session_state['mchnvec_ordr'][platform]['ords'][machine])
                 st.session_state['OL'] =None
+        shutdown = st.button('Shutdown')
+        st.session_state['shutdown'] = shutdown
         # pdb.set_trace()
     # 
     if current_tab == 'PLANTS':
@@ -987,12 +1093,12 @@ def main():
         df_cnt = centr_plnt.container()
         df_container = df_cnt.empty()
         # st.markdown("**_____________________________________________________________________**")
-        try:
-            df_st = st.session_state['df_st']
-        except:
-            st.warning("Error: DF_ST not defined")
+        #try:
+        #    df_st = st.session_state['df_st']
+        #except:
+        #    st.warning("Error: DF_ST not defined")
         #
-        df_container.dataframe(df_st)
+        #df_container.dataframe(df_st)
         with left_plnt:
             plant_mchn = option_menu("Plant Selection", options = machines_parser,
                                     default_index = 0, menu_icon="minecart",
@@ -1015,8 +1121,11 @@ def main():
                     lhplnts[itp] = False
             df_cnt.write(' ')
             #
-            rgtha     =  right_plnt.empty()
-            rgtha.write('Plant Selection')
+            if machine in st.session_state['mchnvec_plnt'][platform]['plnts']: 
+                rgth1   = right_plnt.empty()
+                rgth1.write('Plant(s) already submitted:')
+                right_plnt.write(st.session_state['mchnvec_plnt'][platform]['plnts'][machine])
+            #
             if df_cnt.button('Activate Plant(s)'):
                 rgth1 = right_plnt.empty()
                 rgth1.write('Plant(s) being submitted')
@@ -1032,19 +1141,23 @@ def main():
                 rgth1.write('Plant(s) started:')
                 right_plnt.write(st.session_state['mchnvec_plnt'][platform]['plnts'][plant_mchn])
                 dir_plnts= st.session_state['mchnvec_plnt'][platform]['dirs'][plant_mchn]
+        shutdown = st.button('Shutdown')
+        st.session_state['shutdown'] = shutdown
     # Third part
     if current_tab == 'OUTCOME':
         st.empty()
-        left_outcm, centrleft_outcm,right_outcm = st.columns((1,1,3))
+        left_outcm, centrleft_outcm,right_outcm,last_outcm = st.columns((2,2,2,1))
         df_seleplnt_cnt= left_outcm.container()
         df_seleordr_cnt= centrleft_outcm.container()
         df_selecoil_cnt= right_outcm.container()
+        df_seletable_cnt= last_outcm.container()
         df_cnt_1 = df_seleplnt_cnt.empty()
         df_cnt_2 = df_seleordr_cnt.empty()
         df_cnt_3 = df_selecoil_cnt.empty()
+        df_cnt_4 = df_seletable_cnt.empty()
         #extraer TODAS las plantas activas
-        plnt_list = ['Select a Plant']
-        ordr_list = ['Select an Order']
+        plnt_list = []
+        ordr_list = []
         # pdb.set_trace()
         for mach in st.session_state['mchnvec_plnt'][platform]['plnts'].keys():
             for i in st.session_state['mchnvec_plnt'][platform]['plnts'][mach]: 
@@ -1052,8 +1165,8 @@ def main():
         for mach in st.session_state['mchnvec_ordr'][platform]['ords'].keys():
             for j in st.session_state['mchnvec_ordr'][platform]['lnos'][mach]: 
                 ordr_list.append(j['oname'])
-        plnt_outcm_list = list(set(plnt_list))
-        ordr_outcm_list = list(set(ordr_list))    
+        plnt_outcm_list = ['Select a Plant'] + list(set(plnt_list))
+        ordr_outcm_list = ['Select an Order'] + list(set(ordr_list)) 
         # We check the last date for the log.log file
         if 'lastlog_date' in st.session_state:
             lastlog_date = st.session_state['lastlog_date']
@@ -1073,30 +1186,90 @@ def main():
             loga = tmpres['mainlog']
             logb = tmpres['metadata']
             sbst = auctions_log(loga,logb)
+            sbst.columns = ['Coil', 'Minimum Price', 'Bid', 'Difference', 'Remaining Budget', \
+                        'Counterbid', 'Profit', 'ProdCost', 'TransportCost', 'EnergyCost', \
+                        'initial_thickness', 'PlantRule', 'OilSorte', 'final_thickness', \
+                        'Length', 'Width', 'Thickness', 'Weight', 'ShipDate', 'ListParticipants', \
+                        'AuctionCoils', 'code', 'Order', 'by', 'offer', 'plant', 'AuctionID', \
+                        'NumberParticipants','AuctionStart','AuctionEnd']
         # Proceed with menus
+        st.session_state['title_df_export'] = 'empty.xlsx'
+        st.session_state['df_export'] = pd.DataFrame()
+        st.session_state['pointer'] = ''
         with df_cnt_1:
             plnt_selection = option_menu("Plant Selection", plnt_outcm_list,
                                 default_index = 0, menu_icon="building",
                                 styles=menu_style)
-        if plnt_selection != 'Select a Plant':
-            pdb.set_trace()
-            df_cnt_3.table(sbst.loc[:,['auction','code','coil_width',\
-                               'coil_thichness','order','offer','Profit']])
-            df_cnt_3.write('----')
+        if plnt_selection != st.session_state['plnt_selection']:
+                st.session_state['plnt_selection'] = plnt_selection
+        if st.session_state['plnt_selection'] == 'Select a Plant':
+            st.session_state['ordr_selection'] = 'Select an Order'
+            st.session_state['coil_selection'] = 'Select Coil'
+            st.session_state['pointer'] = 'Plant'
+        if st.session_state['plnt_selection'] != 'Select a Plant':
+            st.session_state['title_df_export'] = 'plt'+ plnt_selection +'.xlsx'
+            st.session_state['df_export'] = sbst.loc[:,['Order','Coil','Thickness','Width','Length',\
+                                'Minimum Price', 'Bid', 'ProdCost', 'TransportCost',\
+                                'EnergyCost','PlantRule','OilSorte','AuctionID']]
+            st.session_state['pointer'] = 'Plant'
+            st.write('----')
             with df_cnt_2:
                 ordr_selection = option_menu("Order Selection", ordr_outcm_list,
                                     default_index = 0, menu_icon="envelope",
                                     styles=menu_style)
-                pdb.set_trace()
-                if ordr_selection != 'Select an Order':
-                    df_cnt_3.table(sbst.loc[sbst.order==ordr_selection,:])
+                if ordr_selection != st.session_state['ordr_selection']:
+                    st.session_state['ordr_selection'] = ordr_selection
+                if st.session_state['ordr_selection'] == 'Select an Order':
+                    st.session_state['coil_selection'] = 'Select Coil'
+                    st.session_state['pointer'] = 'Order'
+                if st.session_state['ordr_selection'] != 'Select an Order':
+                    st.session_state['title_df_export'] = 'ordr'+ ordr_selection +'.xlsx'
+                    st.session_state['df_export'] = sbst.loc[sbst.Order==ordr_selection,['Coil','AuctionStart','AuctionEnd',\
+                                'Minimum Price','Bid','Difference','Remaining Budget',\
+                                'Counterbid', 'Profit','AuctionID']]
+                    st.session_state['pointer'] = 'Order'
             with df_cnt_3: 
                 op_coil_outcm = ['Select '+DEFAULT_outcm_coil] + \
                             st.session_state['mchnvec_ordr'][platform]['clts']
                 coil_selection = option_menu("Coil Selection", op_coil_outcm,
                                     default_index = 0, menu_icon="box-fill",
                                     styles=menu_style)
-                
+                if coil_selection != 'Select Coil':
+                    st.session_state['coil_selection'] = coil_selection
+                if st.session_state['coil_selection'] != 'Select Coil':
+                    st.session_state['title_df_export'] = 'cl'+ coil_selection +'.xlsx'
+                    st.session_state['df_export'] = sbst.loc[sbst.code==coil_selection,['AuctionID','NumberParticipants','ListParticipants']]
+                    st.session_state['pointer'] = 'Coil'
+                #dowloand selection as xlsx
+                if not(st.session_state['df_export'].empty): 
+                    st.session_state['df_export'].to_excel(st.session_state['title_df_export'])
+                    with open(st.session_state['title_df_export'], 'rb') as my_file:
+                        df_cnt_4.download_button(label = 'Export', data = my_file, file_name = st.session_state['title_df_export'], \
+                                            mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') 
+        if not(st.session_state['df_export'].empty):
+            if st.session_state['pointer'] == 'Plant':
+                st.dataframe(st.session_state['df_export'], \
+                        column_config={
+                            "Minimum Price": st.column_config.NumberColumn(disabled = "True", format="$%d"),
+                            "ProdCost": st.column_config.NumberColumn(disabled = "True", format="$%d"),
+                            "TransportCost": st.column_config.NumberColumn(disabled = "True", format="$%d"),
+                            "EnergyCost": st.column_config.NumberColumn(disabled = "True", format="$%d")
+                        },use_container_width = True, hide_index=True)
+            elif st.session_state['pointer'] == 'Order':
+                st.dataframe(st.session_state['df_export'], \
+                        column_config={
+                            "Minimum Price": st.column_config.NumberColumn(disabled = "True", format="$%d"),
+                            "Remaining Budget": st.column_config.NumberColumn(disabled = "True", format="$%d"),
+                            "Profit": st.column_config.NumberColumn(disabled = "True", format="$%d")
+                        }, use_container_width = True, hide_index=True)
+            else:
+                st.dataframe(st.session_state['df_export'], \
+                        column_config={
+                            "ListParticipants": st.column_config.ListColumn()
+                        }, use_container_width = True, hide_index=True)
+            st.write("*Search through data by clicking the table and using hotkeys (Ctrl + F) to bring up the search bar, and using the search bar to filter data.*")
+        shutdown = st.button('Shutdown')
+        st.session_state['shutdown'] = shutdown
         #
     if shutdown:
         # Si, hay que eliminar las carpetas . De hecho hay que procesar todas
@@ -1120,12 +1293,14 @@ def main():
                 killall = "ssh "+str(mach)+' " rm -rf ./tmp*"'
                 out_2 = subprocess.Popen(killall, stdout=None, stdin=None, stderr=None, \
                                 close_fds=True, shell=True, universal_newlines = True)
-        # Removing the log.log local copy used
-        if 'lpath' in st.session_state:
-            os.remove(st.session_state['lpath'])
         # Terminar el proceso.
+        #st.markdown("""<meta http-equiv="refresh" content="0"></meta>""", unsafe_allow_html=True)
+        os.kill(st.session_state['state'], signal.SIGKILL)
+        st.write("Stopped process with pid:", st.session_state['state'])
+        st.session_state['state'] = None
         st.stop()
         sys.exit()
+        #
 #
 if __name__ == "__main__":
     main()
