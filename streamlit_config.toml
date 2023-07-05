@@ -1,0 +1,9 @@
+[server]
+port = 5010
+
+[browser]
+gatherUsageStats = false
+serverPort = 5010
+
+[theme]
+primaryColor = "blue"

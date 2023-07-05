@@ -653,8 +653,18 @@ def auctions_log(lgs,mdt):
     jdx  = lgs['dict'].apply(lambda x: find_vals(x[0],'msg','AU_ENDED'))
     ended= lgs['dict'].loc[jdx].reset_index(drop=True)
     res2 = ended.apply(lambda x: x[0]['msg'].replace('AU_ENDED:','plant:'))
-    sbs2 = pd.DataFrame(res2.apply(lambda x: build_dct(x.split(','))).tolist())    
-    # 
+    sbs2 = pd.DataFrame(res2.apply(lambda x: build_dct(x.split(','))).tolist())   
+    #
+    # Preprocessing Auction Start End and Coils participating ...
+    jdx  = lgs['dict'].apply(lambda x: find_vals(x[0],'msg','send pre-auction'))
+    aunum= lgs['dict'].loc[jdx].apply(lambda x: x[0]['number']).astype(int).tolist()
+    numc = lgs['dict'].loc[jdx].apply(lambda x: len(json.loads(x[0]['to']))).tolist()
+    stxt = lgs.loc[jdx,'dtime'].tolist()
+    jdx2 = lgs['dict'].apply(lambda x: find_vals(x[0],'msg','send acceptance'))
+    etxt = lgs.loc[jdx2,'dtime'].tolist()
+    sbs3 = pd.DataFrame({'AuctionID':aunum,'NumC':numc,'AuctionStart':stxt,
+                         'AuctionEnd':etxt})
+    #
     # merging components
     mg0  = pd.merge(mdt,sbs0,left_on="Coil",right_on="agid")
     mg0  = mg0.drop(['agid'], axis=1)
@@ -663,8 +673,11 @@ def auctions_log(lgs,mdt):
     mg2  = pd.merge(mg1,sbs2[['plant','auction','winner']],left_on="Coil", \
                     right_on="winner")
     mg2  = mg2.drop(['winner'], axis=1)
-    mg2.index = mdt.index
-    return(mg2)
+    mg2['auction'] = mg2['auction'].astype(int)
+    mg3  = pd.merge(mg2,sbs3,left_on='auction',right_on='AuctionID')
+    mg3  = mg3.drop(['AuctionID'],axis=1)
+    mg3.index = mdt.index
+    return(mg3)
 #
 # ==========================================================================
 #
