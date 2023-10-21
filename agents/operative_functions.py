@@ -1230,8 +1230,12 @@ def energy_cost(df_parameters_energy, va_data_df, price_energy_consumption, winn
         production_time=20
         speed= 0.35
     else:
-        speed = va_data_df.loc[0, 'setup_speed'] 
-        production_time = va_data_df.loc[0, 'processing_time'] /3600
+        speed = va_data_df.loc[0, 'setup_speed']
+        if 'processing_time' in va_data_df.columns: 
+            production_time = va_data_df.loc[0, 'processing_time'] /3600
+        else: 
+            production_time = 10
+            print(' *** Error: No processing_time was calculated.')
         #speed = 0.25
         # production_time = va_data_df.loc[0,'AVG(ca_op_time)'] +  va_data_df.loc[0,'AVG(tr_op_time)']   # Production time of the coil at the finishing line (min) ejemplo
     to= va_data_df.loc[0,'id'].split('@')[0]

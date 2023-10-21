@@ -261,7 +261,10 @@ class LaunchAgent(Agent):
             if msg_ar:
                 cl_df    = pd.read_json(msg_ar.body)
                 msg_sndr = str(msg_ar.sender).split('/')[0]
-                [who, purpose] = self.ret_agnt(cl_df.loc[0,'seq'])
+                try:
+                    [who, purpose] = self.ret_agnt(cl_df.loc[0,'seq'])
+                except:
+                    print('Error: '+str(cl_df.loc[0,'seq']))
                 if 'brow' in msg_sndr and cl_df.loc[0,'purpose'] == tlist:
                     contact_list = json.loads(cl_df.loc[0, 'msg'])
                     glist = self.del_agnt(seqce,globals.tosend)

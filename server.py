@@ -347,6 +347,11 @@ def launch_orders(fp,detorder, my_dict, platform, password):
     log = 'log@' + str(platform)
     browser = 'browser@' + str(platform)
     launcher = 'launcher@' + str(platform)
+    if sum(~ pd.Series(detorder).notnull()) > 0: # detorder has nulls ...
+        print(" *** Error [launch_orders]: Ordername:"+ \
+            detorder['oname']+' has NaNs. => Order not launched ...')
+        return(-1)
+    #
     for i in detorder['cdf'].loc[:,'CoilName'].tolist(): 
         st.session_state['mchnvec_ordr'][platform]['clts'].append(i)
     cnames  = ['c'+j for j in detorder['cdf'].loc[:,'CoilName'].tolist()]
@@ -361,7 +366,7 @@ def launch_orders(fp,detorder, my_dict, platform, password):
     fp.write(" -sd '" + detorder['dued'] + "'")
     fp.write(" -nc "+str(detorder['ncls'])+" -lc '" + lst_cns + "' -po ")
     fp.write(str(int(detorder['bdgt'])) + " -lp \'" + lst_pss + "\' -ll \'")
-    fp.write(lst_lgth + "' -so '" + detorder['prule'].replace(')','\)').replace('(','\('))
+    fp.write(lst_lgth + "' -so '" + detorder['prule'].replace(')','\\)').replace('(','\\(').replace('|','\\|'))
     fp.write("' -bag " + str(browser) + " -lag " + str(log) + " -u ")
     fp.write(str(launcher)+" -p "+password+" -w 40 &\n")
     return(None)
@@ -590,13 +595,14 @@ def order_process(platform,machine,dctcoils,sellots,optplnts,password):
                              dfcoils.loc[dfcoils['Production Order NR']==ird,'Final Width (mm)']*7850)
             lcls.columns    = ["CoilName","PltSource","CoilLength"]
             lcls['CoilName']= lcls['CoilName'].astype(str)
-            detord= {'oname':str(ird),'mat':str(mat),'thick':thk,'width':wid,'bdgt':2000*pry*ncls,\
+            detord= {'oname':str(ird),'mat':str(mat),'thick':thk,'width':wid,'bdgt':20000*pry*ncls,\
                     'dued': sdat,'prule':splt,'ncls':ncls,'cdf':lcls,'ag':arg,\
                     'os':ols,'sr':sdr,'asn':asn}
-            launch_orders(fp,detord,dir_orders,platform,password)                    
-            st.session_state['mchnvec_ordr'][platform]['ords'][machine].append(ird)
-            st.session_state['mchnvec_ordr'][platform]['lnos'][machine].append(detord)
-            st.session_state['mchnvec_ordr'][platform]['lots'][machine].append(ilt)    
+            olchd = launch_orders(fp,detord,dir_orders,platform,password)
+            if olchd != -1:
+                st.session_state['mchnvec_ordr'][platform]['ords'][machine].append(ird)
+                st.session_state['mchnvec_ordr'][platform]['lnos'][machine].append(detord)
+                st.session_state['mchnvec_ordr'][platform]['lots'][machine].append(ilt)    
     #
     fp.close()
     oshl = " scp " + path + " @" + str(machine) +":" + dir_orders + "/lchorden.sh"
@@ -913,7 +919,7 @@ def main():
             fd,path = tempfile.mkstemp(prefix='tmp_',dir=ltmp)
             st.session_state['pltvec'][platform] = {}
             st.session_state['pltvec'][platform]['local_log'] = path
-        elif request_agent_list:
+        elif request_agent_list: # AgentList button pressed
             directory_log, df_st = setup(center_gnrlsect,platform,log_mach,log,browser,launcher,password)
             st.session_state['req_agnt_lst'] = request_agent_list
             request_agent_list = False
@@ -1208,10 +1214,11 @@ def main():
             st.session_state['pointer'] = 'Plant'
         if st.session_state['plnt_selection'] != 'Select a Plant':
             st.session_state['title_df_export'] = 'plt'+ plnt_selection +'.xlsx'
-            st.session_state['df_export'] = sbst.loc[:,['Order','Coil','Thickness','Width','Length',\
+            if 'sbst' in locals():
+               st.session_state['df_export'] = sbst.loc[:,['Order','Coil','Thickness','Width','Length',\
                                 'Minimum Price', 'Bid', 'ProdCost', 'TransportCost',\
                                 'EnergyCost','PlantRule','OilSorte','AuctionID']]
-            st.session_state['pointer'] = 'Plant'
+               st.session_state['pointer'] = 'Plant'
             st.write('----')
             with df_cnt_2:
                 ordr_selection = option_menu("Order Selection", ordr_outcm_list,
@@ -1224,10 +1231,11 @@ def main():
                     st.session_state['pointer'] = 'Order'
                 if st.session_state['ordr_selection'] != 'Select an Order':
                     st.session_state['title_df_export'] = 'ordr'+ ordr_selection +'.xlsx'
-                    st.session_state['df_export'] = sbst.loc[sbst.Order==ordr_selection,['Coil','AuctionStart','AuctionEnd',\
+                    if 'sbst' in locals():
+                       st.session_state['df_export'] = sbst.loc[sbst.Order==ordr_selection,['Coil','AuctionStart','AuctionEnd',\
                                 'Minimum Price','Bid','Difference','Remaining Budget',\
                                 'Counterbid', 'Profit','AuctionID']]
-                    st.session_state['pointer'] = 'Order'
+                       st.session_state['pointer'] = 'Order'
             with df_cnt_3: 
                 op_coil_outcm = ['Select '+DEFAULT_outcm_coil] + \
                             st.session_state['mchnvec_ordr'][platform]['clts']
@@ -1238,8 +1246,9 @@ def main():
                     st.session_state['coil_selection'] = coil_selection
                 if st.session_state['coil_selection'] != 'Select Coil':
                     st.session_state['title_df_export'] = 'cl'+ coil_selection +'.xlsx'
-                    st.session_state['df_export'] = sbst.loc[sbst.code==coil_selection,['AuctionID','NumberParticipants','ListParticipants']]
-                    st.session_state['pointer'] = 'Coil'
+                    if 'sbst' in locals():
+                       st.session_state['df_export'] = sbst.loc[sbst.code==coil_selection,['AuctionID','NumberParticipants','ListParticipants']]
+                       st.session_state['pointer'] = 'Coil'
                 #dowloand selection as xlsx
                 if not(st.session_state['df_export'].empty): 
                     st.session_state['df_export'].to_excel(st.session_state['title_df_export'])
